@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" autoUpload="Always" serverName="hwing@147.47.239.198:22 password" remoteFilesAllowedToDisappearOnAutoupload="false">
+    <serverData>
+      <paths name="hwing@147.47.239.198:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/disk1/hwing/Projects/OVG-Nav" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
+  </component>
+</project>
