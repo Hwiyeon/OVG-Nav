@@ -1,0 +1,54 @@
+BASE_TASK_CONFIG_PATH: "configs/objectnav_mp3d.yaml"
+ENV_NAME: "NavRLEnv"
+TORCH_GPU_ID: 0
+
+SIMULATOR:
+  AGENT_0:
+    SENSORS: ['RGB_SENSOR', 'DEPTH_SENSOR']
+    HEIGHT: 1.25
+    RADIUS: 0.18
+  HABITAT_SIM_V0:
+    GPU_DEVICE_ID: 0
+    ALLOW_SLIDING: True
+  SEMANTIC_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 79
+    POSITION: [0, 1.25, 0]
+  RGB_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 79
+    POSITION: [0, 1.25, 0]
+  DEPTH_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 79
+    MIN_DEPTH: 0.5
+    MAX_DEPTH: 5.0
+    POSITION: [0, 1.25, 0]
+
+VIDEO_OPTION: []
+TENSORBOARD_DIR: "tb"
+VIDEO_DIR: "video_dir"
+TEST_EPISODE_COUNT: -1
+EVAL_CKPT_PATH_DIR: "data/new_checkpoints"
+NUM_ENVIRONMENTS: 1
+CHECKPOINT_FOLDER: "data/new_checkpoints"
+TRAINER_NAME: "transfer_evaluator"
+SENSORS: ["DEPTH_SENSOR", "RGB_SENSOR"]
+NUM_UPDATES: 270000
+LOG_INTERVAL: 10
+NUM_CHECKPOINTS: 100
+# Force PyTorch to be single threaded as
+# this improves performance considerably
+FORCE_TORCH_SINGLE_THREADED: True
+
+EVAL:
+  SPLIT: "val"
+
+GLOBAL_AGENT:
+  name: "SemExp"
+
+SEM_EXP_POLICY:
+  pretrained_weights: '../pretrained_models/sem_exp.pth'
