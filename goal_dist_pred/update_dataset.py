@@ -1,7 +1,7 @@
 import os
 os.environ["OMP_NUM_THREADS"] = '1'
 import sys
-sys.path.append('/home/hwing/Projects/offline_objgoal')
+sys.path.append('/home/hwing/Projects/OVG-Nav')
 
 import argparse
 

@@ -473,6 +473,7 @@ def main():
 
     for obj_name in goal_obj_names:
         cnt = obj_results[obj_name]['count']
+        if cnt == 0: continue
         obj_disp_value_acc = obj_results[obj_name]['disp_value_acc']
         obj_disp_rank_acc = obj_results[obj_name]['disp_rank_acc']
         obj_disp_pred_diff = obj_results[obj_name]['disp_pred_diff']
@@ -673,6 +674,7 @@ def eval(checkpoint_path):
 
     for obj_name in goal_obj_names:
         cnt = obj_results[obj_name]['count']
+        if cnt == 0: continue
         obj_disp_value_acc = obj_results[obj_name]['disp_value_acc']
         obj_disp_rank_acc = obj_results[obj_name]['disp_rank_acc']
         obj_disp_pred_diff = obj_results[obj_name]['disp_pred_diff']

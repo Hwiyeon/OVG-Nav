@@ -2332,6 +2332,15 @@ class Runner:
                 'cand_category_room_score': self.cand_category_room_score[self.goal_info['category']],
             }
 
+            self.graph_map.env_data = {
+                'env_name': self.env_name,
+                'level': self.curr_level,
+                'floor_plan': self.base_map,
+                'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
+                'bias_position': self.abs_init_position,
+                'bias_rotation': self.abs_init_rotation,
+            }
+
             # dist_to_objs, is_valid_point = self.dist_to_objs(start_state.position)
 
             if self.vis_floorplan:

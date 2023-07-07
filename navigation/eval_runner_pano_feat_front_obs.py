@@ -2473,6 +2473,15 @@ class Runner:
                 'cand_category_room_feat': self.cand_category_room_feat[self.goal_info['category']],
                 'cand_category_room_score': self.cand_category_room_score[self.goal_info['category']],
             }
+            self.graph_map.env_data = {
+                'env_name': self.env_name,
+                'level': self.curr_level,
+                'floor_plan': self.base_map,
+                'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
+                'bias_position': self.abs_init_position,
+                'bias_rotation': self.abs_init_rotation,
+            }
+
 
             if self.vis_floorplan:
                 self.vis_traj = []

@@ -350,28 +350,46 @@ class Runner:
         navmesh_settings.set_defaults()
         navmesh_success = self._sim.recompute_navmesh(self._sim.pathfinder, navmesh_settings, include_static_objects=True)
         print("navmesh_success ", navmesh_success )
-        self.tdv = TopdownView(self._sim, self.args.dataset, data_dir=self.args.floorplan_data_dir)
-        self.scene_height = self._sim.agents[0].state.position[1]
-        self.tdv.draw_top_down_map(height=self.scene_height)
-        # self.curr_rot = self.tdv.get_polar_angle(quaternion.from_rotation_vector(self.abs_init_rotation))
+        num_level = len(self.level_range)
+        self.level_navmesh = []
+        for i in range(num_level):
+            tdv = TopdownView(self._sim, self.args.dataset, data_dir=self.args.floorplan_data_dir)
+            # scene_height = np.mean(self.level_range[i])
+            # scene_height = self.level_range[i][0] + self.camera_height
+            scene_height = np.mean([goal['position'][1] for goal in self.env_goal_obj_info if goal['level'] == str(i)])
+            tdv.draw_top_down_map(height=scene_height, floor=i)
+            self.level_navmesh.append({
+                'tdv': tdv,
+                'scene_height': scene_height
+            })
 
 
-
-    def get_topdown_floorplan(self):
-        if abs(self._sim.agents[0].state.position[1] - self.scene_height) > 0.5:
-            self.scene_height = self._sim.agents[0].state.position[1]
-            self.tdv.draw_top_down_map(height=self.scene_height)
-        # self.tdv.draw_agent()
-        # if len(self.map_paths) > 0:
-        #     tdv = self.tdv.draw_paths(self.map_paths, tdv)
-        return self.tdv.rgb_top_down_map
+    def get_topdown_floorplan(self, tdv, scene_height):  ## not using
+        # if abs(self._sim.agents[0].state.position[1] - self.scene_height) > 0.5:
+        #     self.scene_height = self._sim.agents[0].state.position[1]
+        #     self.tdv.draw_top_down_map(height=self.scene_height)
+        tdv.draw_top_down_map(height=scene_height)
+        return tdv.rgb_top_down_map
 
     def update_cur_floor_map(self):
         # self.map = get_topdown_map_from_sim(self._sim, meters_per_pixel=0.02)
         # self.map_size = np.shape(self.map)
-        self.map = self.get_topdown_floorplan()
-        self.map = cv2.cvtColor(self.map, cv2.COLOR_BGR2RGB)
-        self.map_size = np.shape(self.map)
+        # self.map = self.get_topdown_floorplan()
+        # self.map = cv2.cvtColor(self.map, cv2.COLOR_BGR2RGB)
+        # self.map_size = np.shape(self.map)
+
+        self.map, self.map_size = [], []
+        for i in range(len(self.level_range)):
+            tdv = self.level_navmesh[i]['tdv']
+            # scene_height = self.level_navmesh[i]['scene_height']
+            # tdv.draw_top_down_map(height=scene_height)
+            map = tdv.rgb_top_down_map
+            map = cv2.cvtColor(map, cv2.COLOR_BGR2RGB)
+            self.map.append(map)
+            map_size = np.shape(map)
+            self.map_size.append(map_size)
+
+        print(f'Visualize floorplan done with level {len(self.level_range)}')
 
 
 
@@ -385,6 +403,51 @@ class Runner:
 
     def node_value_by_obj_dist(self, dist, max_dist=15.0):
         return max(1 - dist / max_dist, 0)
+
+
+
+    def vis_obj_viewpoint_on_floormap(self):
+        self.goal_map = []
+
+        for lv in range(len(self.level_range)):
+            level_map = {}
+            for goal_idx, obj_name in enumerate(self.goal_obj_names):
+                level_map[obj_name] = np.copy(self.map[lv])
+
+                # ## --- draw goal object bboxes --- ##
+                # shapes = np.zeros_like(self.map[lv], np.uint8)
+                # for obj in self.env_goal_obj_info:
+                #     if obj['category'] == goal_idx and int(obj['level']) == lv:
+                #         grid_bbox = self.get_bbox_from_pos_size(obj['position'], obj['sizes'], lv)
+                #         grid_bbox = grid_bbox.tolist()
+                #
+                #         cv2.rectangle(shapes, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (255, 128, 0), -1)
+                # alpha = 0.3
+                # mask = np.repeat(np.sum(shapes, axis=2).astype(bool)[:, :, np.newaxis], 3, axis=2)
+                # level_map[obj_name][mask] = cv2.addWeighted(level_map[obj_name], alpha, shapes, 1 - alpha, 0)[mask]
+
+                # ## --- draw viewpoints --- ##
+                # shapes = np.zeros_like(self.map[lv], np.uint8)
+                # for pos in self.env_class_goal_view_point_level[obj_name][str(lv)]:
+                #     ## view points in dataset ##
+                #     node_grid = self.get_vis_grid_pose(pos, lv)
+                #     shapes = cv2.circle(shapes, node_grid, 3, (255, 255, 0), -1)
+                # alpha = 0.7
+                # mask = np.repeat(np.sum(shapes, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
+                # level_map[obj_name][mask] = cv2.addWeighted(level_map[obj_name], alpha, shapes, 1 - alpha, 0)[mask]
+
+                ## --- draw goal object centers --- ##
+                for pos in np.array([obj['position'] for obj in self.env_goal_obj_info if (obj['category'] == goal_idx and int(obj['level']) == lv)]):
+                    ## goal object positions in dataset
+                    node_grid = self.get_vis_grid_pose(pos, lv)
+                    level_map[obj_name] = cv2.circle(level_map[obj_name], node_grid, 10, (255, 200, 0), -1)
+
+            self.goal_map.append(level_map)
+
+
+        print(f'Visualize goal object viewpoint on floorplan done with level {len(self.level_range)} and goal obj class {len(self.goal_obj_names)}')
+
+
 
     def vis_topdown_graph_map(self, vis_map, graph_map, vis_obj_score=None, curr_node_id=None, curr_goal_node_id=None, curr_goal_position=None,
                               bias_position=None):
@@ -1461,9 +1524,10 @@ class Runner:
         max_data_num = len(valid_traj_list)
 
         ## -- floor plan -- ##
-        if self.vis_floorplan:
-            self.calculate_navmesh()
-            self.update_cur_floor_map()
+        self.set_level_range()
+        self.calculate_navmesh()
+        self.update_cur_floor_map()
+        self.vis_obj_viewpoint_on_floormap()
 
         for traj in valid_traj_list[0:len(valid_traj_list)]:
             data_idx += 1
@@ -1531,8 +1595,9 @@ class Runner:
             self.cur_heading = np.zeros([3])
 
             ## -- floor plan -- ##
-            if self.vis_floorplan:
-                self.cur_map = self.map.copy()
+            self.curr_level = int(self.check_position2level(start_state.position[1]))
+            self.base_map = self.map[self.curr_level].copy()
+            self.cur_graph_map = np.zeros_like(self.map[self.curr_level])
 
 
 
@@ -1559,6 +1624,15 @@ class Runner:
                 'cand_category_room': self.cand_category_room[self.goal_info['category']],
                 'cand_category_room_feat': self.cand_category_room_feat[self.goal_info['category']],
                 'cand_category_room_score': self.cand_category_room_score[self.goal_info['category']],
+            }
+
+            self.graph_map.env_data = {
+                'env_name': self.env_name,
+                'level': self.curr_level,
+                'floor_plan': self.base_map,
+                'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
+                'bias_position': self.abs_init_position,
+                'bias_rotation': self.abs_init_rotation,
             }
 
 
