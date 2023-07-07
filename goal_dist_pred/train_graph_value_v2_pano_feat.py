@@ -1,7 +1,7 @@
 import os
 os.environ["OMP_NUM_THREADS"] = '1'
 import sys
-sys.path.append('/home/hwing/Projects/offline_objgoal')
+sys.path.append('/home/hwing/Projects/OVG-Nav')
 
 import argparse
 
@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser("Pytorch code for unsupervised video summarizat
 parser.add_argument('--vis_feat_dim', default=512, type=int)
 # parser.add_argument('--goal_type_num', default=6, type=int)
 parser.add_argument('--max_dist', default=30., type=float)
-parser.add_argument('--use_cm_score', default=False, type=bool)
+parser.add_argument('--use_cm_score', default=True, type=bool)
 parser.add_argument('--goal_cat', type=str, default='mp3d_21')
 
 # Optimization options
@@ -27,7 +27,7 @@ parser.add_argument('--beta', type=float, default=0.01, help="weight for summary
 
 # Misc
 parser.add_argument('--seed', type=int, default=1, help="random seed (default: 1)")
-parser.add_argument('--gpu', type=str, default='7', help="which gpu devices to use")
+parser.add_argument('--gpu', type=str, default='6', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
@@ -299,6 +299,8 @@ def main():
             adj_mtx_dig0 = adj_mtx * (1-eyes[:len(adj_mtx), :len(adj_mtx)])
             indices = torch.nonzero(adj_mtx_dig0, as_tuple=True)
             adj_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+            if torch.isnan(adj_loss):
+                adj_loss = torch.tensor(0.0).cuda()
 
             loss = value_loss + 0.1 * adj_loss
 
@@ -382,6 +384,8 @@ def main():
                 adj_mtx_dig0 = adj_mtx * (1 - eyes[:len(adj_mtx), :len(adj_mtx)])
                 indices = torch.nonzero(adj_mtx_dig0, as_tuple=True)
                 adj_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+                if torch.isnan(adj_loss):
+                    adj_loss = torch.tensor(0.0).cuda()
 
                 loss = value_loss + 0.1 * adj_loss
 
@@ -620,6 +624,8 @@ def eval(checkpoint_path):
             adj_mtx_dig0 = adj_mtx * (1 - eyes[:len(adj_mtx), :len(adj_mtx)])
             indices = torch.nonzero(adj_mtx_dig0, as_tuple=True)
             adj_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+            if torch.isnan(adj_loss):
+                adj_loss = torch.tensor(0.0).cuda()
 
             loss = value_loss + 0.1 * adj_loss
 
@@ -646,8 +652,8 @@ def eval(checkpoint_path):
                     obj_results[goal_obj_names[i]]['disp_rank_acc'] += rank_acc
                     obj_results[goal_obj_names[i]]['disp_pred_diff'] += pred_diff
 
-            node_goal_dists_cnt = np.squeeze(np.array(node_goal_dists.cpu()) * 10).astype(int)
-            pred_dist_cnt = np.squeeze(np.array(pred_dist.cpu()) * 10).astype(int)
+            node_goal_dists_cnt = np.squeeze(np.array(node_goal_dists.cpu()) * 10, axis=1).astype(int)
+            pred_dist_cnt = np.squeeze(np.array(pred_dist.cpu()) * 10, axis=1).astype(int)
             for i in range(len(node_goal_dists_cnt)):
                 if node_goal_dists_cnt[i] > 9:
                     node_goal_dists_cnt[i] = 9
@@ -680,7 +686,8 @@ def eval(checkpoint_path):
 
 if __name__ == '__main__':
 
-    main()
+    # main()
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0610/0610_v2_1_use_cm_maxdist30.0_lr0.001/model_25.pth')
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0616/0616_combv2_modelv2_1_use_cm_maxdist30.0_lr0.0001/model_20.pth')
     # eval('/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0701/0701_relpose_stepbystep_pano_goalscore_use_cm_maxdist30.0_lr0.01/model_20.pth')
+    eval('/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0706/0706_mp3d21_pano_goalscore_adjloss_use_cm_maxdist30.0_lr0.01/model_12.pth')
