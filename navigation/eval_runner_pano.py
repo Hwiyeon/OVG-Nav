@@ -49,12 +49,13 @@ import time
 import json
 from utils.visualizations.maps import get_topdown_map_from_sim, to_grid, TopdownView
 from utils.graph_utils.graph_pano_cs import GraphMap
-from utils.obj_category_info import assign_room_category, obj_names_det as obj_names, gibson_goal_obj_names, mp3d_goal_obj_names, room_names, mp3d_room_names
+from utils.obj_category_info import assign_room_category, obj_names_det as obj_names, gibson_goal_obj_names, mp3d_goal_obj_names, room_names, mp3d_room_names, rednet_obj_names
 
 from tqdm import tqdm
 import pickle
 
 from modules.detector.detector_mask import Detector
+from modules.detector.rednet_semantic_prediction import SemanticPredRedNet
 from modules.free_space_model.inference import FreeSpaceModel
 from modules.comet_relation.inference import CommonSenseModel
 from modules.visual_odometry.keypoint_matching import KeypointMatching
@@ -131,7 +132,10 @@ class Runner:
             self.goal_obj_names = mp3d_goal_obj_names
         elif args.dataset == 'gibson':
             self.goal_obj_names = gibson_goal_obj_names
-        # self.sge_th = args.sge_th
+
+        if self.args.goal_cat == 'mp3d_21':
+            self.goal_obj_names = rednet_obj_names
+
         self.pix_num = args.width*args.height
         self.cand_angle = np.arange(-120, 240, args.cand_rot)
         self.cand_angle_bias = list(self.cand_angle).index(0) # 0 degree is the center
@@ -164,7 +168,11 @@ class Runner:
         # self.vo_pred_model = VO_prediction(args.vo_config)
         self.depth_scale = np.iinfo(np.uint16).max
 
-        self.detector = Detector(args, self.det_COI)
+        self.goal_cat = args.goal_cat
+        if args.goal_cat == 'mp3d':
+            self.detector = Detector(args, self.det_COI)
+        elif args.goal_cat == 'mp3d_21':
+            self.detector = SemanticPredRedNet(args)
         self.free_space_model = FreeSpaceModel(args)
         self.common_sense_model = CommonSenseModel(args)
         self.noisy_pose = args.noisy_pose
@@ -206,8 +214,8 @@ class Runner:
             rgb_name = 'pano_rgb'
             depth_name = 'pano_depth'
         else:
-            width = self.vo_width
-            height = self.vo_height
+            width = 320  # self.vo_width
+            height = 240   # self.vo_height
             rgb_name = 'rgb'
             depth_name = 'depth'
 
@@ -215,6 +223,7 @@ class Runner:
                                 (width, height))
         for image in rgb_list:
             image = cv2.cvtColor((image[:, :, :3] / 255.).astype(np.float32), cv2.COLOR_RGB2BGR)
+            image = cv2.resize(image, (width, height))
             video.write((image * 255).astype(np.uint8))
         video.release()
 
@@ -223,6 +232,7 @@ class Runner:
         for depth_obs in depth_list:
             # norm_depth = np.where(depth_obs < 10, depth_obs/10., 1.).astype(np.float32)
             # norm_depth = (norm_depth * np.iinfo(np.uint16).max).astype(np.uint16)
+            depth_obs = cv2.resize(depth_obs, (width, height))
             depth_obs = (np.clip(depth_obs, 0.1, 10.) / 10.).astype(np.float32)
             depth_obs = (depth_obs * self.depth_scale).astype(np.uint16) / self.depth_scale
             depth_obs = (depth_obs * 255).astype(np.uint8)
@@ -245,7 +255,7 @@ class Runner:
 
     def make_total_frame(self, rgb, depth, graph, local_map, pano_rgb, info):
         rh, rw = np.shape(rgb)[:2]
-        # rh, rw = int(rh/2), int(rw/2)
+        rh, rw = int(rh/2), int(rw/2)
         small_rgb = cv2.resize(rgb, (rw, rh))
         small_depth = cv2.resize(depth, (rw, rh))
         small_depth = ((np.clip(small_depth, 0.1, 10.) / 10.) * 255).astype(np.uint8)
@@ -364,7 +374,7 @@ class Runner:
         cand_category_room_score = {}
         cand_room_feat = self.common_sense_model.clip.get_text_feat(candidate_names).type(torch.float32)
         for i, goal_name in enumerate(goal_names):
-            pred_words = self.common_sense_model.gen_pred_words(gibson_goal_obj_names[i] + ' in an indoor space',
+            pred_words = self.common_sense_model.gen_pred_words(self.goal_obj_names[i] + ' in an indoor space',
                                                                 num_generate=10)
             # pred_words = pred_words[0]
             pred_words_feat = self.common_sense_model.clip.get_text_feat(pred_words).type(torch.float32)
@@ -1266,44 +1276,81 @@ class Runner:
         return int(close)
 
     def check_close_goal_det(self, rgb, depth, vis=False):
-        obj_min_dist = 9999
-        obj_min_pixel = None
-        closest_obj_id = None
-        rgb = rgb[:,:,:3]
-        if vis:
-            img, pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(rgb, show=True)
-        else:
-            pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(rgb)
-        for i, goal_idx in enumerate(pred_classes):
-            if goal_idx == self.goal_class_idx:
-                # if np.min(depth[masks[i]]) < th:
-                #     close = True
-                #     break
-                # temp_min_dist = np.min(depth[masks[i]])
-                # temp_min_dist = np.min(depth[np.nonzero(depth*masks[i])])
-                nonzero_pixel = depth[np.nonzero(depth * masks[i])]
+        if self.goal_cat == 'mp3d':
+            obj_min_dist = 9999
+            obj_min_pixel = None
+            closest_obj_id = None
+            rgb = rgb[:, :, :3]
+            if vis:
+                img, pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(rgb, show=True)
+            else:
+                pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(rgb)
+            for i, goal_idx in enumerate(pred_classes):
+                if goal_idx == self.goal_class_idx:
+                    # if np.min(depth[masks[i]]) < th:
+                    #     close = True
+                    #     break
+                    # temp_min_dist = np.min(depth[masks[i]])
+                    # temp_min_dist = np.min(depth[np.nonzero(depth*masks[i])])
+                    nonzero_pixel = depth[np.nonzero(depth * masks[i])]
+                    temp_med_dist = np.sort(nonzero_pixel)[int(len(nonzero_pixel) / 2)]
+
+                    if temp_med_dist < obj_min_dist:
+                        obj_min_dist = temp_med_dist
+                        obj_min_pixel = np.argwhere(depth * masks[i] == temp_med_dist)[0]
+                        closest_obj_id = i
+
+                        ## get position from pixel
+
+            det_out = {
+                'pred_classes': pred_classes,
+                'scores': scores,
+                'pred_out': pred_out,
+                'masks': masks,
+                'boxes': boxes,
+                'closest_obj_id': closest_obj_id,
+                'obj_min_dist': obj_min_dist,
+                'obj_min_pixel': obj_min_pixel
+            }
+            if vis:
+                det_out['det_img'] = img
+            return det_out, obj_min_dist
+
+        elif self.goal_cat == 'mp3d_21':
+            rgb = rgb[:, :, :3]
+
+            in_rgb = np.transpose(rgb, (2, 0, 1))
+            in_depth = np.expand_dims(depth, axis=0)
+
+            in_rgb, in_depth = torch.from_numpy(in_rgb).float().to(f"cuda:{self.args.model_gpu}"), torch.from_numpy(in_depth).float().to(f"cuda:{self.args.model_gpu}")
+            in_rgb, in_depth = in_rgb.unsqueeze(0), in_depth.unsqueeze(0)
+            pred = self.detector.get_predictions(in_rgb, in_depth)[0]
+
+            pred_mask = pred[self.goal_class_idx].cpu().numpy().astype(np.uint8)
+            depth_mask = (depth < self.last_mile_range).astype(np.uint8)
+            mask = pred_mask * depth_mask
+            nonzero_pixel = depth[np.nonzero(depth * mask)]
+
+            if len(nonzero_pixel) > 0:
                 temp_med_dist = np.sort(nonzero_pixel)[int(len(nonzero_pixel) / 2)]
+                obj_min_dist = temp_med_dist
+                obj_min_pixel = np.argwhere(depth * mask == temp_med_dist)[0]
+            else:
+                obj_min_dist = 9999
+                obj_min_pixel = None
 
-                if temp_med_dist < obj_min_dist:
-                    obj_min_dist = temp_med_dist
-                    obj_min_pixel = np.argwhere(depth * masks[i] == temp_med_dist)[0]
-                    closest_obj_id = i
+            det_out = {
+                'obj_min_dist': obj_min_dist,
+                'obj_min_pixel': obj_min_pixel
+            }
+            if vis:
+                det_img = self.detector.visualize_rednet_pred(pred)
+                alpha = 0.3
+                mask = np.repeat(np.sum(det_img, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
+                rgb[mask] = cv2.addWeighted(rgb, alpha, det_img, 1 - alpha, 0)[mask]
 
-                    ## get position from pixel
-
-        det_out = {
-            'pred_classes': pred_classes,
-            'scores': scores,
-            'pred_out': pred_out,
-            'masks': masks,
-            'boxes': boxes,
-            'closest_obj_id': closest_obj_id,
-            'obj_min_dist': obj_min_dist,
-            'obj_min_pixel': obj_min_pixel
-        }
-        if vis:
-            det_out['det_img'] = img
-        return det_out, obj_min_dist
+                det_out['det_img'] = rgb
+            return det_out, obj_min_dist
 
     def check_pano_goal_det(self, pano_rgb, curr_node, pos, rot, vis=False):
         # pano_rgb = pano_rgb.astype(np.uint8)
@@ -2236,7 +2283,7 @@ class Runner:
         self.cand_category_room, self.cand_category_room_feat, self.cand_category_room_score = \
             self.init_commonsense_candidate_room(self.goal_obj_names, mp3d_room_names)
 
-        self.goal_category_feat = self.common_sense_model.clip.get_text_feat(gibson_goal_obj_names).type(torch.float32)
+        self.goal_category_feat = self.common_sense_model.clip.get_text_feat(self.goal_obj_names).type(torch.float32)
 
 
 
@@ -2291,6 +2338,19 @@ class Runner:
             self.calculate_navmesh()
             self.update_cur_floor_map()
             self.vis_obj_viewpoint_on_floormap()
+
+            ## save floor map image
+            floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
+            if not os.path.exists(floor_map_dir):
+                os.makedirs(floor_map_dir)
+            for lv in range(len(self.map)):
+                cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}.png', cv2.cvtColor(self.map[lv], cv2.COLOR_BGR2RGB))
+                for obj_name in self.goal_obj_names:
+                    cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}_{obj_name}.png', cv2.cvtColor(self.goal_map[lv][obj_name],cv2.COLOR_BGR2RGB))
+            print("Save floor map done")
+
+
+
 
 
         for traj in valid_traj_list[0:len(valid_traj_list):interval]:
@@ -2414,8 +2474,8 @@ class Runner:
             self.graph_map.env_data = {
                 'env_name': self.env_name,
                 'level': self.curr_level,
-                'floor_plan': self.base_map,
-                'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
+                # 'floor_plan': self.base_map,
+                # 'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
                 'bias_position': self.abs_init_position,
                 'bias_rotation': self.abs_init_rotation,
             }
@@ -2634,6 +2694,7 @@ class Runner:
                                                    curr_position=agent.get_state().position - self.abs_init_position,
                                                    curr_goal_position=self.vis_object_goal_position,
                                                    result=result)
+
 
 
             with open(

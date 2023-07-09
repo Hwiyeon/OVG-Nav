@@ -1529,6 +1529,17 @@ class Runner:
         self.update_cur_floor_map()
         self.vis_obj_viewpoint_on_floormap()
 
+        ## save floor map image
+        floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
+        if not os.path.exists(floor_map_dir):
+            os.makedirs(floor_map_dir)
+        for lv in range(len(self.map)):
+            cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}.png', cv2.cvtColor(self.map[lv], cv2.COLOR_BGR2RGB))
+            for obj_name in self.goal_obj_names:
+                cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}_{obj_name}.png',
+                            cv2.cvtColor(self.goal_map[lv][obj_name], cv2.COLOR_BGR2RGB))
+        print("Save floor map done")
+
         for traj in valid_traj_list[0:len(valid_traj_list)]:
             data_idx += 1
             if data_idx > max_data_num:
@@ -1629,8 +1640,8 @@ class Runner:
             self.graph_map.env_data = {
                 'env_name': self.env_name,
                 'level': self.curr_level,
-                'floor_plan': self.base_map,
-                'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
+                # 'floor_plan': self.base_map,
+                # 'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
                 'bias_position': self.abs_init_position,
                 'bias_rotation': self.abs_init_rotation,
             }

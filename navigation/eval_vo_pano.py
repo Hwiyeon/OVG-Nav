@@ -4,7 +4,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "8, 9"
 
 import sys
-sys.path.append('/home/hwing/Projects/offline_objgoal')
+sys.path.append('/home/hwing/Projects/OVG-Nav')
 
 import argparse
 
@@ -22,7 +22,7 @@ parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=0)
 parser.add_argument("--data_split_max", type=int, default=11)
-parser.add_argument("--save_dir", type=str, default="/home/hwing/Dataset/cm_graph/{}/{}/0701_vo/actrot30_nobias_1obs_pano_cometscore")
+parser.add_argument("--save_dir", type=str, default="/home/hwing/Dataset/cm_graph/{}/{}/0707_21_vo/actrot30_1obs_pano_cometscore")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -33,8 +33,8 @@ parser.add_argument("--cm_type", type=str, default="comet")
 parser.add_argument('--goal_cat', type=str, default='mp3d_21')
 
 ## observation configs ##
-parser.add_argument("--front_width", type=int, default=320)
-parser.add_argument("--front_height", type=int, default=240)
+parser.add_argument("--front_width", type=int, default=640)
+parser.add_argument("--front_height", type=int, default=480)
 parser.add_argument("--front_hfov", type=int, default=70)
 
 parser.add_argument("--add_panoramic_sensor", type=bool, default=True)

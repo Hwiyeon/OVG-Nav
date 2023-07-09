@@ -4,7 +4,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "8, 9"
 
 import sys
-sys.path.append('/home/hwing/Projects/offline_objgoal')
+sys.path.append('/home/hwing/Projects/OVG-Nav')
 
 import argparse
 
@@ -12,7 +12,7 @@ import argparse
 parser = argparse.ArgumentParser()
 
 ## eval configs ##
-parser.add_argument("--gpu_list", type=str, default="9")
+parser.add_argument("--gpu_list", type=str, default="0")
 parser.add_argument("--model_gpu", type=str, default="0")
 parser.add_argument("--sim_gpu", type=str, default="0")
 # parser.add_argument("--data", type=str, default="gibosn")
@@ -20,9 +20,9 @@ parser.add_argument("--n_for_env", type=int, default=2000)
 parser.add_argument("--max_step", type=int, default=500)
 parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
-parser.add_argument("--data_split", type=int, default=4)
+parser.add_argument("--data_split", type=int, default=0)
 parser.add_argument("--data_split_max", type=int, default=11)
-parser.add_argument("--save_dir", type=str, default="/home/hwing/Dataset/cm_graph/{}/{}/0701/actrot30_nobias_1obs_pano_cometscore")
+parser.add_argument("--save_dir", type=str, default="/home/hwing/Dataset/cm_graph/{}/{}/0707_21/actrot30_1obs_pano_cometscore")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -33,8 +33,8 @@ parser.add_argument("--cm_type", type=str, default="comet")
 parser.add_argument('--goal_cat', type=str, default='mp3d_21')
 
 ## observation configs ##
-parser.add_argument("--front_width", type=int, default=320)
-parser.add_argument("--front_height", type=int, default=240)
+parser.add_argument("--front_width", type=int, default=640)
+parser.add_argument("--front_height", type=int, default=480)
 parser.add_argument("--front_hfov", type=int, default=70)
 
 parser.add_argument("--add_panoramic_sensor", type=bool, default=True)
@@ -82,7 +82,7 @@ parser.add_argument("--COMET_model", type=str, default="/home/hwing/Projects/off
 
 # parser.add_argument("--value_model", type=str, default='/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0610/0610_v2_1_use_cm_maxdist30.0_lr0.001/model_25.pth')
 # parser.add_argument("--value_model", type=str, default='/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0616/0616_combv2_modelv2_1_use_cm_maxdist30.0_lr0.0001/model_20.pth')
-parser.add_argument("--value_model", type=str, default='/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0701/0701_relpose_stepbystep_pano_goalscore_use_cm_maxdist30.0_lr0.01/model_20.pth')
+parser.add_argument("--value_model", type=str, default='/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0706/0706_mp3d21_pano_goalscore_adjloss_use_cm_maxdist30.0_lr0.01/model_16.pth')
 parser.add_argument('--vis_feat_dim', default=512, type=int)
 parser.add_argument('--use_cm_score', default=True, type=bool)
 

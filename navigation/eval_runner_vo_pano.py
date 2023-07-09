@@ -49,7 +49,7 @@ import time
 import json
 from utils.visualizations.maps import get_topdown_map_from_sim, to_grid, TopdownView
 from utils.graph_utils.graph_pano_cs import GraphMap
-from utils.obj_category_info import assign_room_category, obj_names_det as obj_names, gibson_goal_obj_names, mp3d_goal_obj_names, room_names, mp3d_room_names, d3_40_colors_rgb
+from utils.obj_category_info import assign_room_category, obj_names_det as obj_names, gibson_goal_obj_names, mp3d_goal_obj_names, room_names, mp3d_room_names, d3_40_colors_rgb, rednet_obj_names
 
 from tqdm import tqdm
 import pickle
@@ -133,6 +133,9 @@ class Runner:
         elif args.dataset == 'gibson':
             self.goal_obj_names = gibson_goal_obj_names
         # self.sge_th = args.sge_th
+        if self.args.goal_cat == 'mp3d_21':
+            self.goal_obj_names = rednet_obj_names
+
         self.pix_num = args.width*args.height
         self.cand_angle = np.arange(-120, 240, args.cand_rot)
         self.cand_angle_bias = list(self.cand_angle).index(0) # 0 degree is the center
@@ -211,8 +214,8 @@ class Runner:
             rgb_name = 'pano_rgb'
             depth_name = 'pano_depth'
         else:
-            width = self.vo_width
-            height = self.vo_height
+            width = 320 # self.vo_width
+            height = 240 # self.vo_height
             rgb_name = 'rgb'
             depth_name = 'depth'
 
@@ -220,6 +223,7 @@ class Runner:
                                 (width, height))
         for image in rgb_list:
             image = cv2.cvtColor((image[:, :, :3] / 255.).astype(np.float32), cv2.COLOR_RGB2BGR)
+            image = cv2.resize(image, (width, height))
             video.write((image * 255).astype(np.uint8))
         video.release()
 
@@ -228,6 +232,7 @@ class Runner:
         for depth_obs in depth_list:
             # norm_depth = np.where(depth_obs < 10, depth_obs/10., 1.).astype(np.float32)
             # norm_depth = (norm_depth * np.iinfo(np.uint16).max).astype(np.uint16)
+            depth_obs = cv2.resize(depth_obs, (width, height))
             depth_obs = (np.clip(depth_obs, 0.1, 10.) / 10.).astype(np.float32)
             depth_obs = (depth_obs * self.depth_scale).astype(np.uint16) / self.depth_scale
             depth_obs = (depth_obs * 255).astype(np.uint8)
@@ -250,7 +255,7 @@ class Runner:
 
     def make_total_frame(self, rgb, depth, graph, local_map, pano_rgb, info):
         rh, rw = np.shape(rgb)[:2]
-        # rh, rw = int(rh/2), int(rw/2)
+        rh, rw = int(rh/2), int(rw/2)
         small_rgb = cv2.resize(rgb, (rw, rh))
         small_depth = cv2.resize(depth, (rw, rh))
         small_depth = ((np.clip(small_depth, 0.1, 10.) / 10.) * 255).astype(np.uint8)
@@ -349,7 +354,7 @@ class Runner:
         cand_category_room_score = {}
         cand_room_feat = self.common_sense_model.clip.get_text_feat(candidate_names).type(torch.float32)
         for i, goal_name in enumerate(goal_names):
-            pred_words = self.common_sense_model.gen_pred_words(gibson_goal_obj_names[i] + ' in an indoor space',
+            pred_words = self.common_sense_model.gen_pred_words(self.goal_obj_names[i] + ' in an indoor space',
                                                                 num_generate=10)
             # pred_words = pred_words[0]
             pred_words_feat = self.common_sense_model.clip.get_text_feat(pred_words).type(torch.float32)
@@ -1198,7 +1203,7 @@ class Runner:
             in_rgb = np.transpose(rgb, (2, 0, 1))
             in_depth = np.expand_dims(depth, axis=0)
 
-            in_rgb, in_depth = torch.from_numpy(in_rgb).float().to(self.args.model_gpu), torch.from_numpy(in_depth).float().cuda(self.args.model_gpu)
+            in_rgb, in_depth = torch.from_numpy(in_rgb).float().to(f"cuda:{self.args.model_gpu}"), torch.from_numpy(in_depth).float().to(f"cuda:{self.args.model_gpu}")
             in_rgb, in_depth = in_rgb.unsqueeze(0), in_depth.unsqueeze(0)
             pred = self.detector.get_predictions(in_rgb, in_depth)[0]
 
@@ -1221,7 +1226,12 @@ class Runner:
                 'obj_min_pixel': obj_min_pixel
             }
             if vis:
-                det_out['det_img'] = self.detector.visualize_rednet_pred(pred)
+                det_img = self.detector.visualize_rednet_pred(pred)
+                alpha = 0.3
+                mask = np.repeat(np.sum(det_img, axis=2).astype(bool)[:, :, np.newaxis], 3, axis=2)
+                rgb[mask] = cv2.addWeighted(rgb, alpha, det_img, 1 - alpha, 0)[mask]
+
+                det_out['det_img'] = rgb
             return det_out, obj_min_dist
 
 
@@ -2156,7 +2166,7 @@ class Runner:
         self.cand_category_room, self.cand_category_room_feat, self.cand_category_room_score = \
             self.init_commonsense_candidate_room(self.goal_obj_names, mp3d_room_names)
 
-        self.goal_category_feat = self.common_sense_model.clip.get_text_feat(gibson_goal_obj_names).type(torch.float32)
+        self.goal_category_feat = self.common_sense_model.clip.get_text_feat(self.goal_obj_names).type(torch.float32)
 
 
 
@@ -2211,6 +2221,17 @@ class Runner:
             self.calculate_navmesh()
             self.update_cur_floor_map()
             self.vis_obj_viewpoint_on_floormap()
+
+            ## save floor map image
+            floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
+            if not os.path.exists(floor_map_dir):
+                os.makedirs(floor_map_dir)
+            for lv in range(len(self.map)):
+                cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}.png', cv2.cvtColor(self.map[lv], cv2.COLOR_BGR2RGB))
+                for obj_name in self.goal_obj_names:
+                    cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}_{obj_name}.png',
+                                cv2.cvtColor(self.goal_map[lv][obj_name], cv2.COLOR_BGR2RGB))
+            print("Save floor map done")
 
 
         for traj in valid_traj_list[0:len(valid_traj_list):interval]:
@@ -2335,8 +2356,8 @@ class Runner:
             self.graph_map.env_data = {
                 'env_name': self.env_name,
                 'level': self.curr_level,
-                'floor_plan': self.base_map,
-                'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
+                # 'floor_plan': self.base_map,
+                # 'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
                 'bias_position': self.abs_init_position,
                 'bias_rotation': self.abs_init_rotation,
             }
