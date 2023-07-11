@@ -50,6 +50,7 @@ class Node(object):
         self.feat = torch.cat([self.vis_feat, torch.Tensor([self.cm_score]), self.visited, torch.Tensor(self.pos), self.goal_cat], dim=0)
 
     def update_clip_feat(self, feat, angle):
+        feat = feat.cpu()
         self.clip_feat[angle] = (self.clip_feat[angle] * self.observed_feat[angle] + feat) / (self.observed_feat[angle] + 1)
         self.observed_feat[angle] += 1
 
@@ -113,6 +114,7 @@ class GraphMap(object):
         self.pose_to_id = {}
         self.edges = set()
         self.edge_ids = []
+        self.edge_by_id = {}
         self.clustered = False
         self.clusterType = None
         self.graph_axes = None
@@ -297,7 +299,10 @@ class GraphMap(object):
         node1.children.append({'node': node2, 'nodeid': node2.nodeid})
         node2.children.append({'node': node1, 'nodeid': node1.nodeid})
 
-        self.update_adj_mtx(node1, node2)
+        self.edge_by_id[(node1.nodeid, node2.nodeid)] = edge
+        self.edge_by_id[(node2.nodeid, node1.nodeid)] = edge
+
+        self.update_adj_mtx(node1, node2, distance)
 
     def delete_edge(self, node1, node2):
         edge_ids = [edge for edge in self.edge_ids if edge == (node1.nodeid, node2.nodeid) or edge == (node2.nodeid, node1.nodeid)]
@@ -322,6 +327,9 @@ class GraphMap(object):
 
         self.adj_mtx[int(node1.nodeid), int(node2.nodeid)] = 0
         self.adj_mtx[int(node2.nodeid), int(node1.nodeid)] = 0
+
+        self.edge_by_id.pop((node1.nodeid, node2.nodeid))
+        self.edge_by_id.pop((node2.nodeid, node1.nodeid))
 
         node1.blocked_children_ids.append(node2.nodeid)
         node2.blocked_children_ids.append(node1.nodeid)
@@ -352,11 +360,11 @@ class GraphMap(object):
             self.adj_mtx = adj_mtx
 
 
-    def update_adj_mtx(self, node1, node2):
+    def update_adj_mtx(self, node1, node2, distance):
         """Update the adjacency matrix"""
         self.expand_adj_mtx()
-        self.adj_mtx[int(node1.nodeid)][int(node2.nodeid)] = 1
-        self.adj_mtx[int(node2.nodeid)][int(node1.nodeid)] = 1
+        self.adj_mtx[int(node1.nodeid)][int(node2.nodeid)] = distance
+        self.adj_mtx[int(node2.nodeid)][int(node1.nodeid)] = distance
 
 
     def add_cand_nodes(self, node, cand_nodes, dirc_feats, obj_info_list):
