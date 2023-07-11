@@ -1676,7 +1676,7 @@ class Runner:
         self.vis_obj_viewpoint_on_floormap()
 
         ## save floor map image
-        floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
+        floor_map_dir = f"{self.args.save_dir}/floor_map/{self.data_type}/{self.env_name}"
         if not os.path.exists(floor_map_dir):
             os.makedirs(floor_map_dir)
         for lv in range(len(self.map)):
@@ -1791,6 +1791,7 @@ class Runner:
                 # 'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
                 'bias_position': self.abs_init_position,
                 'bias_rotation': self.abs_init_rotation,
+                'env_bound': self._sim.pathfinder.get_bounds()
             }
 
 

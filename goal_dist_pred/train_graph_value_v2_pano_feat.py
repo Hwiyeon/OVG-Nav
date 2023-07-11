@@ -32,7 +32,7 @@ parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to u
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0704/21cat_relative_pose_step_by_step_pano', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0704/21cat_relative_pose_step_by_step_pano_edge2.0', type=str)
 # parser.add_argument('--data-dir', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cm', type=str)
 # parser.add_argument('--data-dir_aug', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cmv2', type=str)
 # parser.add_argument('--data-dir_aug', default=[
@@ -650,8 +650,8 @@ def eval(checkpoint_path):
             cand_nodes = 1 - info_features[:, 0]
             if torch.sum(cand_nodes) == 0:
                 topk_list = None
-            elif torch.sum(cand_nodes) >= 3:
-                topk_list = torch.topk(node_goal_dists[cand_nodes > 0], 3, dim=0).indices
+            elif torch.sum(cand_nodes) >= 1:
+                topk_list = torch.topk(node_goal_dists[cand_nodes > 0], 1, dim=0).indices
             else:
                 topk_list = torch.topk(node_goal_dists[cand_nodes > 0], int(torch.sum(1 - info_features[:, 0])),
                                        dim=0).indices

@@ -2360,6 +2360,7 @@ class Runner:
                 # 'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
                 'bias_position': self.abs_init_position,
                 'bias_rotation': self.abs_init_rotation,
+                'env_bound': self._sim.pathfinder.get_bounds()
             }
 
             # dist_to_objs, is_valid_point = self.dist_to_objs(start_state.position)
