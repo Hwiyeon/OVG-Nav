@@ -50,8 +50,8 @@ class Node(object):
         self.feat = torch.cat([self.vis_feat, torch.Tensor([self.cm_score]), self.visited, torch.Tensor(self.pos), self.goal_cat], dim=0)
 
     def update_clip_feat(self, feat, angle):
-        self.clip_feat[angle] = feat
-        self.observed_feat[angle] = 1
+        self.clip_feat[angle] = (self.clip_feat[angle] * self.observed_feat[angle] + feat) / (self.observed_feat[angle] + 1)
+        self.observed_feat[angle] += 1
 
     def update_max_depth(self, depth, angle):
         if depth > self.max_depth[angle]:
