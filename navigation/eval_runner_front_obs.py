@@ -49,12 +49,13 @@ import time
 import json
 from utils.visualizations.maps import get_topdown_map_from_sim, to_grid, TopdownView
 from utils.graph_utils.graph_pano_cs import GraphMap
-from utils.obj_category_info import assign_room_category, obj_names_det as obj_names, gibson_goal_obj_names, mp3d_goal_obj_names, room_names, mp3d_room_names
+from utils.obj_category_info import assign_room_category, obj_names_det as obj_names, gibson_goal_obj_names, mp3d_goal_obj_names, room_names, mp3d_room_names, rednet_obj_names
 
 from tqdm import tqdm
 import pickle
 
 from modules.detector.detector_mask import Detector
+from modules.detector.rednet_semantic_prediction import SemanticPredRedNet
 from modules.free_space_model.inference import FreeSpaceModel
 from modules.comet_relation.inference import CommonSenseModel
 from modules.visual_odometry.keypoint_matching import KeypointMatching
@@ -131,7 +132,10 @@ class Runner:
             self.goal_obj_names = mp3d_goal_obj_names
         elif args.dataset == 'gibson':
             self.goal_obj_names = gibson_goal_obj_names
-        # self.sge_th = args.sge_th
+
+        if self.args.goal_cat == 'mp3d_21':
+            self.goal_obj_names = rednet_obj_names
+
         self.pix_num = args.width*args.height
         self.cand_angle = np.arange(-120, 240, args.cand_rot)
         self.cand_angle_bias = list(self.cand_angle).index(0) # 0 degree is the center
@@ -164,7 +168,11 @@ class Runner:
         # self.vo_pred_model = VO_prediction(args.vo_config)
         self.depth_scale = np.iinfo(np.uint16).max
 
-        self.detector = Detector(args, self.det_COI)
+        self.goal_cat = args.goal_cat
+        if args.goal_cat == 'mp3d':
+            self.detector = Detector(args, self.det_COI)
+        elif args.goal_cat == 'mp3d_21':
+            self.detector = SemanticPredRedNet(args)
         self.free_space_model = FreeSpaceModel(args)
         self.common_sense_model = CommonSenseModel(args)
         self.noisy_pose = args.noisy_pose
@@ -206,8 +214,8 @@ class Runner:
             rgb_name = 'pano_rgb'
             depth_name = 'pano_depth'
         else:
-            width = self.vo_width
-            height = self.vo_height
+            width = 320  # self.vo_width
+            height = 240   # self.vo_height
             rgb_name = 'rgb'
             depth_name = 'depth'
 
@@ -215,6 +223,7 @@ class Runner:
                                 (width, height))
         for image in rgb_list:
             image = cv2.cvtColor((image[:, :, :3] / 255.).astype(np.float32), cv2.COLOR_RGB2BGR)
+            image = cv2.resize(image, (width, height))
             video.write((image * 255).astype(np.uint8))
         video.release()
 
@@ -223,6 +232,7 @@ class Runner:
         for depth_obs in depth_list:
             # norm_depth = np.where(depth_obs < 10, depth_obs/10., 1.).astype(np.float32)
             # norm_depth = (norm_depth * np.iinfo(np.uint16).max).astype(np.uint16)
+            depth_obs = cv2.resize(depth_obs, (width, height))
             depth_obs = (np.clip(depth_obs, 0.1, 10.) / 10.).astype(np.float32)
             depth_obs = (depth_obs * self.depth_scale).astype(np.uint16) / self.depth_scale
             depth_obs = (depth_obs * 255).astype(np.uint8)
@@ -245,7 +255,7 @@ class Runner:
 
     def make_total_frame(self, rgb, depth, graph, local_map, pano_rgb, info):
         rh, rw = np.shape(rgb)[:2]
-        # rh, rw = int(rh/2), int(rw/2)
+        rh, rw = int(rh/2), int(rw/2)
         small_rgb = cv2.resize(rgb, (rw, rh))
         small_depth = cv2.resize(depth, (rw, rh))
         small_depth = ((np.clip(small_depth, 0.1, 10.) / 10.) * 255).astype(np.uint8)
@@ -364,7 +374,7 @@ class Runner:
         cand_category_room_score = {}
         cand_room_feat = self.common_sense_model.clip.get_text_feat(candidate_names).type(torch.float32)
         for i, goal_name in enumerate(goal_names):
-            pred_words = self.common_sense_model.gen_pred_words(gibson_goal_obj_names[i] + ' in an indoor space',
+            pred_words = self.common_sense_model.gen_pred_words(self.goal_obj_names[i] + ' in an indoor space',
                                                                 num_generate=10)
             # pred_words = pred_words[0]
             pred_words_feat = self.common_sense_model.clip.get_text_feat(pred_words).type(torch.float32)
@@ -981,11 +991,18 @@ class Runner:
             dirc_imgs.append(dirc_img)
         return np.array(dirc_imgs)
 
-    def get_cand_node_dirc(self, pano_rgb, depth, pos, rot, vis_pos=None):
+    def get_cand_node_dirc(self, rgb, depth, pos, rot, vis_pos=None):
         ## rot is rotation vector
         cur_heading_idx = int(np.round(-rot[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
         cand_nodes = []
         cand_angle = [-30, 0, 30]
+        splited_imgs = [
+            rgb[:, :int(self.vo_width/2),:3],
+            rgb[:, int(self.vo_width/4):int(self.vo_width*3/4),:3],
+            rgb[:, int(self.vo_width/2):,:3]
+        ]
+
+
         self.local_mapper.reset_map()
         depth_cm = depth * 100
         pose_origin_for_map = (pos[0], pos[2], 0)  # (x, y, o)
@@ -1008,7 +1025,7 @@ class Runner:
         # free cand angle idx --> right side is positive
         free_cand_nodes = np.zeros(12)
         angle_bias = np.where(self.cand_angle == -30)[0][0]
-
+        cand_split_images = []
         for i, angle in enumerate(cand_angle):
             rot_vec = rot + np.radians(-angle) * rot_axis
             unit_vec = -np.array([np.sin(rot_vec[1]), 0, np.cos(rot_vec[1])])
@@ -1021,7 +1038,8 @@ class Runner:
             cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, pose_origin_for_map)
             cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
             if self.local_mapper.is_traversable(curr_local_map, pose_on_map, cand_pose_on_grid_map):
-                cand_node_info = {'position': cand_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx}
+                cand_node_info = {'position': cand_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx,
+                                  'pose_on_map': cand_pose_on_grid_map, 'cand_edge': []}
 
                 # if self.vis_floorplan:
                 vis_rot_vec = rot_vec + self.abs_init_rotation
@@ -1043,177 +1061,104 @@ class Runner:
                 # next_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(next_pose_on_grid_map_cm)
                 # if self.local_mapper.is_traversable(curr_local_map, pose_on_map, next_pose_on_grid_map):
                 #     cand_node_info['next_node'] = {'position': next_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx}
+                #     vis_next_pos = vis_pos + vis_unit_vec * self.edge_range * 2
+                #     cand_node_info['next_node']['vis_position'] = vis_next_pos
+                #
                 # else:
+                #     cand_node_info['next_node'] = None
                 cand_node_info['next_node'] = None
 
                 cand_nodes.append(cand_node_info)
+                cand_split_images.append(splited_imgs[i])
+
                 free_cand_nodes[angle_bias + i] = 1
 
-        # cand_nodes.append({'position': cand_pos, 'rotation': cand_rot})
-        #
-        pano_split_images = self.get_dirc_imgs_from_pano(pano_rgb)
-        cand_split_images = pano_split_images[np.where(free_cand_nodes == 1)[0]]
+
+
+
 
         valid_cand_nodes = []
-        # similarity, cand_split_feat = self.common_sense_model.clip.get_text_image_sim(text, cand_split_images,
-        #                                                                               out_img_feat=True)
         if len(cand_split_images) > 0:
             cand_image_feat = self.common_sense_model.clip.get_image_feat(cand_split_images)
-            # cm_score, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat, cand_image_feat, feat=True)
             for i in range(len(cand_nodes)):
-                # if not self.graph_map.check_node_exist(cand_nodes[i]['position']):
-                    # value = np.round(np.max(similarity, axis=1), 3)
-                    # cand_nodes[i]['clip_feat'] = cand_split_feat[i]
-                    # cand_nodes[i]['value'] = value[i]
-
                 cand_nodes[i]['clip_feat'] = cand_image_feat[i]
-                if cand_nodes[i]['next_node'] is not None:
-                    cand_nodes[i]['next_node']['clip_feat'] = cand_image_feat[i]
-                # cand_nodes[i]['cm_score'] = cm_score[i]
+
+                for j in range(i+1, len(cand_nodes)):
+                    if self.local_mapper.is_traversable(curr_local_map, cand_nodes[i]['pose_on_map'], cand_nodes[j]['pose_on_map']):
+                        cand_nodes[i]['cand_edge'].append(j)
+
                 valid_cand_nodes.append(cand_nodes[i])
 
         return valid_cand_nodes
 
-    def check_cand_node_edge(self, cur_node, pano_rgb, pos, rot):
-        ## rot is rotation vector
-        cand_nodes = []
-        cand_angle = self.cand_angle
-        self.local_mapper.reset_map()
-        rot_axis = np.array([0, 1, 0])
+    def update_cand_node_to_graph(self, cur_node, cand_nodes):
+        if len(cand_nodes) == 0:
+            return
+        cand_node_list = []
+        for cand_node_info in cand_nodes:
+            cand_node, add_new_node = self.graph_map.add_single_node(cand_node_info['position'])
+            self.graph_map.update_node_goal_category(cand_node, self.goal_class_onehot)
+            self.graph_map.update_node_clip_feat(cand_node, cand_node_info['clip_feat'], cand_node_info['heading_idx'])
+            # self.graph_map.update_node_vis_feat(cand_node)
 
-        # for global coordinate
-        # turn left = positive angle
-        # free cand angle idx --> right side is positive
-
-        free_cand_nodes = self.free_space_model.predict_free_space(pano_rgb)
-        pano_split_images = self.get_dirc_imgs_from_pano(pano_rgb)
-
-        cand_node_edges = []
-
-        for i, angle in enumerate(cand_angle):
-            rot_vec = rot + np.radians(-angle) * rot_axis
-            unit_vec = -np.array([np.sin(rot_vec[1]), 0, np.cos(rot_vec[1])])
-            cand_pos = pos + unit_vec * self.edge_range
-            cur_heading_idx = int(np.round(-rot_vec[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
-
-            nearest_node_idx, nearest_node_dist = self.graph_map.get_nearest_node(cand_pos)
-            if nearest_node_dist < self.graph_map.max_edge_length and free_cand_nodes[
-                i] == 1 and not nearest_node_idx == cur_node.nodeid:
-                # cand_node = self.graph_map.node_by_id[nearest_node_idx]
-
-                cand_info = {
-                    'nearest_node_idx': nearest_node_idx,
-                    'nearest_node_dist': nearest_node_dist,
-                    'img': pano_split_images[i],
-                    'heading_idx': cur_heading_idx,
-                }
-                cand_node_edges.append(cand_info)
-
-        ## delete duplicate nearest node ###
-
-        connected_nodes = {}
-
-        for i in range(len(cand_node_edges)):
-            if cand_node_edges[i]['nearest_node_idx'] not in connected_nodes.keys():
-                connected_nodes[cand_node_edges[i]['nearest_node_idx']] = cand_node_edges[i]
-            elif connected_nodes[cand_node_edges[i]['nearest_node_idx']]['nearest_node_dist'] > cand_node_edges[i][
-                'nearest_node_dist']:
-                connected_nodes[cand_node_edges[i]['nearest_node_idx']] = cand_node_edges[i]
-
-        for key in connected_nodes.keys():
-            cand_node = self.graph_map.node_by_id[key]
-
-            # cand_image_feat = self.common_sense_model.clip.get_image_feat([pano_split_images[i]])
-            cand_image_feat = self.common_sense_model.clip.get_image_feat([connected_nodes[key]['img']])
-            self.graph_map.update_node_clip_feat(cand_node, cand_image_feat, connected_nodes[key]['heading_idx'])
-            self.graph_map.update_node_vis_feat(cand_node)
-
+            torch.set_num_threads(1)
             if self.cm_type == 'comet':
                 goal_cm_scores, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat,
-                                                                             cand_image_feat, feat=True,
+                                                                             cand_node_info['clip_feat'], feat=True,
                                                                              return_only_max=False)
-                # goal_cm_scores = torch.softmax(goal_cm_scores, dim=1)
                 goal_cm_scores = goal_cm_scores * 0.01
-                cand_node.update_goal_cm_scores(goal_cm_scores, connected_nodes[key]['heading_idx'])
+                cand_node.update_goal_cm_scores(goal_cm_scores, cand_node_info['heading_idx'])
 
 
             elif self.cm_type == 'mp3d':
                 goal_cm_scores, _ = self.common_sense_model.text_image_score(self.cand_place_text_feat,
-                                                                             cand_image_feat, feat=True,
+                                                                             cand_node_info['clip_feat'], feat=True,
                                                                              return_only_max=False)
                 goal_cm_scores = goal_cm_scores[:, :5]
 
                 goal_cm_scores = np.round(np.max(np.exp(goal_cm_scores) / np.sum(np.exp(goal_cm_scores)), axis=1), 5)
                 weighted_goal_cm_scores = goal_cm_scores * self.cand_category_room_score[self.goal_info['category']][
                                                            :5]  ## weighted by room category
-                cand_node.update_goal_cm_scores(weighted_goal_cm_scores, connected_nodes[key]['heading_idx'])
-
+                cand_node.update_goal_cm_scores(weighted_goal_cm_scores, cand_node_info['heading_idx'])
             self.graph_map.update_node_feat(cand_node)
+
+            if add_new_node:
+                curr_dist_to_objs, curr_is_valid = self.dist_to_objs(cand_node_info['vis_position'] + self.abs_init_position)
+                self.graph_map.update_node_dist_to_objs(cand_node, curr_dist_to_objs)
+                # if self.vis_floorplan:
+                cand_node.vis_pos = cand_node_info['vis_position']
+
             self.graph_map.add_edge(cur_node, cand_node)
+            cand_node_list.append(cand_node)
 
-        return
+            # ## -- one step further -- ##
+            # if cand_node_info['next_node'] is not None:
+            #     next_node, add_new_node = self.graph_map.add_single_node(cand_node_info['next_node']['position'])
+            #     self.graph_map.update_node_goal_category(next_node, self.goal_class_onehot)
+            #     self.graph_map.update_node_clip_feat(next_node, cand_node_info['next_node']['clip_feat'],
+            #                                          cand_node_info['next_node']['heading_idx'])
+            #     # self.graph_map.update_node_vis_feat(next_node)
+            #
+            #     torch.set_num_threads(1)
+            #     if self.cm_type == 'comet':
+            #         next_node.update_goal_cm_scores(goal_cm_scores, cand_node_info['heading_idx'])
+            #
+            #     elif self.cm_type == 'mp3d':
+            #         next_node.update_goal_cm_scores(weighted_goal_cm_scores, cand_node_info['heading_idx'])
+            #     # self.graph_map.update_node_feat(cand_node)
+            #
+            #     if add_new_node:
+            #         curr_dist_to_objs, curr_is_valid = self.dist_to_objs(
+            #             cand_node_info['next_node']['vis_position'] + self.abs_init_position)
+            #         self.graph_map.update_node_dist_to_objs(next_node, curr_dist_to_objs)
+            #         next_node.vis_pos = cand_node_info['next_node']['vis_position']
+            #
+            #     self.graph_map.add_edge(cand_node, next_node)
 
+        for i, node in enumerate(cand_node_list):
+            for j in cand_nodes[i]['cand_edge']:
+                self.graph_map.add_edge(node, cand_node_list[j])
 
-    def get_cand_node_by_local_map_in_running(self, local_map, local_exp_map, cur_goal_grid, cur_center_position,
-                                              cur_rotataion, pano_rgb):
-
-        valid_cand_nodes = []
-        if local_exp_map[cur_goal_grid[1], cur_goal_grid[0]] == 0:
-            # print('goal is not in the local map')
-            return valid_cand_nodes
-        traversible = (skimage.morphology.binary_dilation(local_map, skimage.morphology.disk(2)) != True)
-        masked_traversible = np.logical_and(traversible, local_exp_map.astype(bool))
-        curr_planner = FMMPlanner(self.args, masked_traversible, 360 // 10, 1)
-        curr_planner.set_goal((cur_goal_grid[1], cur_goal_grid[0]))
-        # mask_local_exp_map = np.zeros_like(local_exp_map)
-        # mask_local_exp_map[local_exp_map==0] = 9999.
-        # mask_local_exp_map[local_exp_map!=0] = 1.
-
-        # curr_exp_fmm_map = curr_planner.fmm_dist * mask_local_exp_map
-        curr_exp_fmm_map = curr_planner.fmm_dist
-        pose_origin_for_map = (cur_center_position[0], cur_center_position[2], 0)
-
-        cand_angles = np.arange(-150, 210, self.act_rot)
-        # free_cand_nodes = np.zeros(len(cand_angles))
-        free_cand_nodes = []
-        angle_bias = np.where(cand_angles == 0)[0][0]
-
-        grid_center = (local_map.shape[0]//2, local_map.shape[1]//2)
-
-
-
-        cand_nodes = []
-        for i in range(360//self.act_rot):
-            tx = int(self.edge_range*100./self.local_mapper.resolution * np.cos(np.radians(i*self.act_rot)))
-            ty = int(self.edge_range*100./self.local_mapper.resolution * np.sin(np.radians(i*self.act_rot)))
-            cand_grid = cur_goal_grid + np.array([ty, tx])
-            if not curr_exp_fmm_map[cand_grid[1], cand_grid[0]] < self.edge_range * 100./self.local_mapper.resolution * 1.025 :
-                continue
-            cand_pose = self.local_mapper.get_sim_pose_from_mapper_coords(cand_grid, cur_center_position, cur_rotataion)
-            if not self.graph_map.check_node_exist(cand_pose):
-                rel_head = np.arctan2(cand_grid[0]-grid_center[0], cand_grid[1]-grid_center[1])
-                pano_head = cur_rotataion[1] - rel_head
-                pano_head_idx = (angle_bias + int(np.rad2deg(pano_head) // self.act_rot)) % len(cand_angles)
-                # free_cand_nodes[pano_head_idx] = 1
-                free_cand_nodes.append(pano_head_idx)
-                cand_nodes.append({'position': cand_pose})
-
-        pano_split_images = self.get_dirc_imgs_from_pano(pano_rgb, num_imgs=len(cand_angles))
-        # cand_split_images = pano_split_images[np.where(free_cand_nodes == 1)[0]]
-        cand_split_images = pano_split_images[free_cand_nodes]
-        text = self.goal_info['category_place']
-
-
-        for i in range(len(cand_nodes)):
-            if not self.graph_map.check_node_exist(cand_nodes[i]['position']):
-                similarity, cand_split_feat = self.common_sense_model.clip.get_text_image_sim(text, cand_split_images,
-                                                                                              out_img_feat=True)
-                value = np.round(np.max(similarity, axis=1), 3)
-                cand_nodes[i]['clip_feat'] = cand_split_feat[i]
-                cand_nodes[i]['value'] = value[i]
-                valid_cand_nodes.append(cand_nodes[i])
-
-        return valid_cand_nodes
 
 
     def get_value_graph(self):
@@ -1275,11 +1220,11 @@ class Runner:
             obj_scores.append(np.squeeze(node.pred_value))
 
             # dist score
-            temp_path = self.get_shortest_path(cur_node.nodeid, id, self.graph_map.adj_mtx)
+            temp_path, temp_path_length = self.get_shortest_path(cur_node.nodeid, id, self.graph_map.adj_mtx)
             if len(temp_path) == 0:
                 dist_score = -10
             else:
-                dist_score = max(1 - len(temp_path) / max_dist, 0)
+                dist_score = max(1 - temp_path_length / max_dist, 0)
             dist_scores.append(dist_score)
 
 
@@ -1329,107 +1274,83 @@ class Runner:
         return int(close)
 
     def check_close_goal_det(self, rgb, depth, vis=False):
-        obj_min_dist = 9999
-        obj_min_pixel = None
-        closest_obj_id = None
-        rgb = rgb[:,:,:3]
-        if vis:
-            img, pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(rgb, show=True)
-        else:
-            pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(rgb)
-        for i, goal_idx in enumerate(pred_classes):
-            if goal_idx == self.goal_class_idx:
-                # if np.min(depth[masks[i]]) < th:
-                #     close = True
-                #     break
-                # temp_min_dist = np.min(depth[masks[i]])
-                # temp_min_dist = np.min(depth[np.nonzero(depth*masks[i])])
-                nonzero_pixel = depth[np.nonzero(depth * masks[i])]
+        if self.goal_cat == 'mp3d':
+            obj_min_dist = 9999
+            obj_min_pixel = None
+            closest_obj_id = None
+            rgb = rgb[:, :, :3]
+            if vis:
+                img, pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(rgb, show=True)
+            else:
+                pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(rgb)
+            for i, goal_idx in enumerate(pred_classes):
+                if goal_idx == self.goal_class_idx:
+                    # if np.min(depth[masks[i]]) < th:
+                    #     close = True
+                    #     break
+                    # temp_min_dist = np.min(depth[masks[i]])
+                    # temp_min_dist = np.min(depth[np.nonzero(depth*masks[i])])
+                    nonzero_pixel = depth[np.nonzero(depth * masks[i])]
+                    temp_med_dist = np.sort(nonzero_pixel)[int(len(nonzero_pixel) / 2)]
+
+                    if temp_med_dist < obj_min_dist:
+                        obj_min_dist = temp_med_dist
+                        obj_min_pixel = np.argwhere(depth * masks[i] == temp_med_dist)[0]
+                        closest_obj_id = i
+
+                        ## get position from pixel
+
+            det_out = {
+                'pred_classes': pred_classes,
+                'scores': scores,
+                'pred_out': pred_out,
+                'masks': masks,
+                'boxes': boxes,
+                'closest_obj_id': closest_obj_id,
+                'obj_min_dist': obj_min_dist,
+                'obj_min_pixel': obj_min_pixel
+            }
+            if vis:
+                det_out['det_img'] = img
+            return det_out, obj_min_dist
+
+        elif self.goal_cat == 'mp3d_21':
+            rgb = rgb[:, :, :3]
+
+            in_rgb = np.transpose(rgb, (2, 0, 1))
+            in_depth = np.expand_dims(depth, axis=0)
+
+            in_rgb, in_depth = torch.from_numpy(in_rgb).float().to(f"cuda:{self.args.model_gpu}"), torch.from_numpy(in_depth).float().to(f"cuda:{self.args.model_gpu}")
+            in_rgb, in_depth = in_rgb.unsqueeze(0), in_depth.unsqueeze(0)
+            pred = self.detector.get_predictions(in_rgb, in_depth)[0]
+
+            pred_mask = pred[self.goal_class_idx].cpu().numpy().astype(np.uint8)
+            depth_mask = (depth < self.last_mile_range).astype(np.uint8)
+            mask = pred_mask * depth_mask
+            nonzero_pixel = depth[np.nonzero(depth * mask)]
+
+            if len(nonzero_pixel) > 0:
                 temp_med_dist = np.sort(nonzero_pixel)[int(len(nonzero_pixel) / 2)]
+                obj_min_dist = temp_med_dist
+                obj_min_pixel = np.argwhere(depth * mask == temp_med_dist)[0]
+            else:
+                obj_min_dist = 9999
+                obj_min_pixel = None
 
-                if temp_med_dist < obj_min_dist:
-                    obj_min_dist = temp_med_dist
-                    obj_min_pixel = np.argwhere(depth * masks[i] == temp_med_dist)[0]
-                    closest_obj_id = i
+            det_out = {
+                'obj_min_dist': obj_min_dist,
+                'obj_min_pixel': obj_min_pixel
+            }
+            if vis:
+                det_img = self.detector.visualize_rednet_pred(pred)
+                alpha = 0.3
+                mask = np.repeat(np.sum(det_img, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
+                rgb[mask] = cv2.addWeighted(rgb, alpha, det_img, 1 - alpha, 0)[mask]
 
-                    ## get position from pixel
+                det_out['det_img'] = rgb
+            return det_out, obj_min_dist
 
-        det_out = {
-            'pred_classes': pred_classes,
-            'scores': scores,
-            'pred_out': pred_out,
-            'masks': masks,
-            'boxes': boxes,
-            'closest_obj_id': closest_obj_id,
-            'obj_min_dist': obj_min_dist,
-            'obj_min_pixel': obj_min_pixel
-        }
-        if vis:
-            det_out['det_img'] = img
-        return det_out, obj_min_dist
 
-    def check_pano_goal_det(self, pano_rgb, curr_node, pos, rot, vis=False):
-        # pano_rgb = pano_rgb.astype(np.uint8)
-        # rot_axis = np.array([0, 1, 0])
-        #
-        # if vis:
-        #     img, pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(pano_rgb, show=True)
-        # else:
-        #     pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(pano_rgb)
-        # for i, goal_idx in enumerate(pred_classes):
-        #     if goal_idx == self.goal_class_idx:
-        #         ## --- get heading of the object from the current rotation --- ##
-        #         center_x = int(np.median(np.where(np.sum(masks[i], axis=0) > 0)))
-        #         head_x = int(center_x / (np.shape(pano_rgb)[1] + 1) * 12) - 1
-        #         rot_angle = self.cand_angle[head_x]
-        #
-        #         rot_to_face = rot_angle // self.act_rot
-        #         if rot_to_face < -180 / self.act_rot:
-        #             rot_to_face += int(360 / self.act_rot)
-        #         elif rot_to_face > 180 / self.act_rot:
-        #             rot_to_face -= int(360 / self.act_rot)
-        #         for rot in range(abs(rot_to_face)):
-        #             if rot_to_face < 0:
-        #                 action = 'turn_left'
-        #             else:
-        #                 action = 'turn_right'
-        #             self.end_episode = self.do_explicit_action(self.cur_node, action)
-        #             if self.end_episode:
-        #                 # last mile navigation activated in explicit action
-        #                 return
-        #
-        #         pos = self.cur_position
-        #         rot = self.cur_rotation
-        #         break
-        #
-        #         # ## --- check if node exists in heading position --- ##
-        #         # rot_vec = rot + np.radians(-rot_angle) * rot_axis
-        #         # unit_vec = -np.array([np.sin(rot_vec[1]), 0, np.cos(rot_vec[1])])
-        #         # cand_pos = pos + unit_vec * self.edge_range
-        #         # nearest_node_idx, nearest_node_dist = self.graph_map.get_nearest_node(cand_pos)
-        #         # if nearest_node_dist < self.graph_map.min_node_dist and \
-        #         #         self.graph_map.adj_mtx[int(curr_node.nodeid), int(nearest_node_idx)] == 1:
-        #         #     continue
-        #         # else:
-        #         #     rot_to_face = rot_angle // self.act_rot
-        #         #     if rot_to_face < -180 / self.act_rot:
-        #         #         rot_to_face += int(360 / self.act_rot)
-        #         #     elif rot_to_face > 180 / self.act_rot:
-        #         #         rot_to_face -= int(360 / self.act_rot)
-        #         #     for rot in range(abs(rot_to_face)):
-        #         #         if rot_to_face < 0:
-        #         #             action = 'turn_left'
-        #         #         else:
-        #         #             action = 'turn_right'
-        #         #         self.end_episode = self.do_explicit_action(self.cur_node, action)
-        #         #         if self.end_episode:
-        #         #             # last mile navigation activated in explicit action
-        #         #             return
-        #         #
-        #         # pos = self.cur_position
-        #         # rot = self.cur_rotation
-
-        return
 
     def get_position_from_pixel(self, cur_position, cur_rotation, depth, pixel):
 
@@ -1453,52 +1374,7 @@ class Runner:
         return target_position
 
 
-    def update_cand_node_to_graph(self, cur_node, cand_nodes):
-        if len(cand_nodes) == 0:
-            return
-        for cand_node_info in cand_nodes:
-            cand_node, add_new_node = self.graph_map.add_single_node(cand_node_info['position'])
-            # cand_node = self.graph_map.get_node_by_pos(cand_node_info['position'])
-            # if int(cand_node.nodeid) == len(self.graph_map.nodes)-1: ## new node
-            self.graph_map.update_node_goal_category(cand_node, self.goal_class_onehot)
-            self.graph_map.update_node_clip_feat(cand_node, cand_node_info['clip_feat'], cand_node_info['heading_idx'])
-            self.graph_map.update_node_vis_feat(cand_node)
 
-            torch.set_num_threads(1)
-            if self.cm_type == 'comet':
-                goal_cm_scores, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat,
-                                                                             cand_node_info['clip_feat'], feat=True,
-                                                                             return_only_max=False)
-                # goal_cm_scores = torch.softmax(goal_cm_scores, dim=1)
-                goal_cm_scores = goal_cm_scores * 0.01
-                cand_node.update_goal_cm_scores(goal_cm_scores, cand_node_info['heading_idx'])
-
-
-            elif self.cm_type == 'mp3d':
-                goal_cm_scores, _ = self.common_sense_model.text_image_score(self.cand_place_text_feat,
-                                                                             cand_node_info['clip_feat'], feat=True,
-                                                                             return_only_max=False)
-                goal_cm_scores = goal_cm_scores[:, :5]
-
-                goal_cm_scores = np.round(np.max(np.exp(goal_cm_scores) / np.sum(np.exp(goal_cm_scores)), axis=1), 5)
-                weighted_goal_cm_scores = goal_cm_scores * self.cand_category_room_score[self.goal_info['category']][
-                                                           :5]  ## weighted by room category
-                cand_node.update_goal_cm_scores(weighted_goal_cm_scores, cand_node_info['heading_idx'])
-            self.graph_map.update_node_feat(cand_node)
-            # self.graph_map.update_node_cm_score(cand_node, cand_node_info['cm_score'])
-
-            if add_new_node:
-
-
-                curr_dist_to_objs, curr_is_valid = self.dist_to_objs(cand_node_info['vis_position'] + self.abs_init_position)
-                self.graph_map.update_node_dist_to_objs(cand_node, curr_dist_to_objs)
-                self.graph_map.add_edge(cur_node, cand_node)
-
-                # if self.vis_floorplan:
-                cand_node.vis_pos = cand_node_info['vis_position']
-
-            elif np.linalg.norm(np.asarray(cur_node.pos) - np.asarray(cand_node.pos)) < self.edge_range * 1.05:
-                self.graph_map.add_edge(cur_node, cand_node)
 
 
 
@@ -1520,8 +1396,11 @@ class Runner:
         path.reverse()
 
         path = [str(i) for i in path]
+        path_length = 0
+        for i, nodeid in enumerate(path[:-1]):
+            path_length += self.graph_map.adj_mtx[int(nodeid)][int(path[i + 1])]
 
-        return path[1:]
+        return path[1:], path_length
 
 
 
@@ -1608,11 +1487,11 @@ class Runner:
         self.action_step += 1
 
         ## update candidate node
-        cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1],
+        cand_nodes = self.get_cand_node_dirc(self.rgb_list[-1],
                                              self.depth_list[-1], curr_position, curr_rotation, vis_pos=np.array(self.abs_position) - np.array(self.abs_init_position))
         self.update_cand_node_to_graph(cur_node, cand_nodes)
 
-        self.check_pano_goal_det(pano_obs['rgb_panoramic'], self.cur_node, curr_position, curr_rotation, vis=True)
+        # self.check_pano_goal_det(pano_obs['rgb_panoramic'], self.cur_node, curr_position, curr_rotation, vis=True)
         curr_position, curr_rotation = self.cur_position, self.cur_rotation
         if self.end_episode:
             return self.end_episode
@@ -1734,7 +1613,7 @@ class Runner:
 
                 subgoal_id = subgoal_node.nodeid
 
-                temp_path = self.get_shortest_path(self.cur_node.nodeid, subgoal_id, self.graph_map.adj_mtx)
+                temp_path, temp_path_length = self.get_shortest_path(self.cur_node.nodeid, subgoal_id, self.graph_map.adj_mtx)
 
                 # for node_id in temp_path:
                 ## --- one node step update --- ##
@@ -1854,20 +1733,16 @@ class Runner:
                     self.local_agent.collision = True
 
 
-                if arrive_node:
-                    # ### --- cur_node_position --- ###
-                    # curr_position = np.array(self.cur_node.pos)
-                    # self.cur_position = curr_position
 
 
-                    cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1], self.depth_list[-1], curr_position,
-                                                         curr_rotation, np.array(curr_state.position)-np.array(self.abs_init_position))
-                    # temp_node_num = len(self.graph_map.nodes)
-                    self.update_cand_node_to_graph(self.cur_node, cand_nodes)
 
-                    # if temp_node_num < len(self.graph_map.nodes):
-                    #     ## new cand node is added
-                    #     break
+                cand_nodes = self.get_cand_node_dirc(self.rgb_list[-1], self.depth_list[-1], curr_position,
+                                                     curr_rotation, np.array(curr_state.position)-np.array(self.abs_init_position))
+                cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
+                self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes)
+
+
+
 
                 self.local_agent.gt_new_sim_origin = get_sim_location(curr_position,
                                                                       quaternion.from_rotation_vector(curr_rotation))
@@ -1885,13 +1760,6 @@ class Runner:
                                                                    visited_positions=self.visited_positions)
                     vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
 
-                self.check_pano_goal_det(pano_obs['rgb_panoramic'], self.cur_node, curr_position, curr_rotation, vis=True)
-
-                # curr_state = self._sim.agents[0].get_state()
-                # curr_position = curr_state.position - self.abs_init_position
-                # curr_rotation = quaternion.as_rotation_vector(curr_state.rotation)  # - self.abs_init_rotation
-                # self.cur_position, self.cur_rotation = curr_position, curr_rotation
-
 
                 if self.end_episode:
                     return
@@ -1908,7 +1776,6 @@ class Runner:
 
 
 
-
             if max_action_step:
                 break
             if last_mile_navi_mode:
@@ -1919,35 +1786,15 @@ class Runner:
                 self.graph_map.delete_edge(self.cur_node, temp_goal_node)
                 continue
 
-            # if arrive_node:
-            #     # observe new node at the starting node with only rotation
-            #     continue
-
 
             self.cur_node = temp_goal_node
             arrive_node = True
             invalid_edge = False
 
-            # update current arrived node
-            # curr_state = self._sim.agents[0].get_state()
-            # curr_position = curr_state.position - self.abs_init_position
-            # curr_rotation = quaternion.as_rotation_vector(curr_state.rotation)
-            # self.cur_position, self.cur_rotation = curr_position, curr_rotation
-
-            # curr_state = self._sim.agents[0].get_state()
-            # curr_rotation = quaternion.as_rotation_vector(curr_state.rotation) - self.abs_init_rotation
-            # rot = R.from_rotvec(-self.abs_init_rotation)
-            # curr_position_diff = rot.apply(curr_state.position - prev_position)
-            # curr_position = self.cur_position + curr_position_diff
-            # self.cur_position = curr_position
-            # self.cur_rotation = curr_rotation
-
             curr_state = self._sim.agents[0].get_state()
             curr_obs = self._sim.get_sensor_observations()
             curr_pano_obs = self.panoramic_obs(curr_obs)
             pano_images = self.get_dirc_imgs_from_pano(curr_pano_obs['rgb_panoramic'])
-
-            self.check_cand_node_edge(self.cur_node, self.pano_rgb_list[-1], curr_position, curr_rotation)
 
             pano_image_feat = self.common_sense_model.clip.get_image_feat(pano_images)
             cur_heading_idx = int(np.round(-curr_rotation[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
@@ -1989,7 +1836,7 @@ class Runner:
             # self.graph_map.update_node_room(subgoal_node, self.check_position2room(subgoal_node.pos, self.room_info))
             # self.graph_map.update_node_cand_info(subgoal_node, cand_node_info)
 
-            cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1], self.depth_list[-1], curr_position, curr_rotation, vis_pos=np.array(curr_state.position)- np.array(self.abs_init_position))
+            cand_nodes = self.get_cand_node_dirc(self.rgb_list[-1], self.depth_list[-1], curr_position, curr_rotation, vis_pos=np.array(curr_state.position)- np.array(self.abs_init_position))
             self.update_cand_node_to_graph(self.cur_node, cand_nodes)
 
 
@@ -2299,7 +2146,7 @@ class Runner:
         self.cand_category_room, self.cand_category_room_feat, self.cand_category_room_score = \
             self.init_commonsense_candidate_room(self.goal_obj_names, mp3d_room_names)
 
-        self.goal_category_feat = self.common_sense_model.clip.get_text_feat(gibson_goal_obj_names).type(torch.float32)
+        self.goal_category_feat = self.common_sense_model.clip.get_text_feat(self.goal_obj_names).type(torch.float32)
 
 
 
@@ -2354,6 +2201,19 @@ class Runner:
             self.calculate_navmesh()
             self.update_cur_floor_map()
             self.vis_obj_viewpoint_on_floormap()
+
+            ## save floor map image
+            floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
+            if not os.path.exists(floor_map_dir):
+                os.makedirs(floor_map_dir)
+            for lv in range(len(self.map)):
+                cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}.png', cv2.cvtColor(self.map[lv], cv2.COLOR_BGR2RGB))
+                for obj_name in self.goal_obj_names:
+                    cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}_{obj_name}.png', cv2.cvtColor(self.goal_map[lv][obj_name],cv2.COLOR_BGR2RGB))
+            print("Save floor map done")
+
+
+
 
 
         for traj in valid_traj_list[0:len(valid_traj_list):interval]:
@@ -2473,15 +2333,16 @@ class Runner:
                 'cand_category_room_feat': self.cand_category_room_feat[self.goal_info['category']],
                 'cand_category_room_score': self.cand_category_room_score[self.goal_info['category']],
             }
+
             self.graph_map.env_data = {
                 'env_name': self.env_name,
                 'level': self.curr_level,
-                'floor_plan': self.base_map,
-                'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
+                # 'floor_plan': self.base_map,
+                # 'floor_plan_with_goal': self.goal_map[self.curr_level].copy(),
                 'bias_position': self.abs_init_position,
                 'bias_rotation': self.abs_init_rotation,
+                'env_bound': self._sim.pathfinder.get_bounds()
             }
-
 
             if self.vis_floorplan:
                 self.vis_traj = []
@@ -2553,7 +2414,7 @@ class Runner:
             ## update candidate node
 
             # cand_nodes = self.get_cand_node(self.pano_rgb_list[-1], self.cur_position, self.cur_heading, self.goal_info)
-            cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1], self.depth_list[-1], self.cur_position, self.cur_rotation, np.array(self.abs_position)-np.array(self.abs_init_position))
+            cand_nodes = self.get_cand_node_dirc(self.rgb_list[-1], self.depth_list[-1], self.cur_position, self.cur_rotation, np.array(self.abs_position)-np.array(self.abs_init_position))
             self.update_cand_node_to_graph(self.cur_node, cand_nodes)
 
             if self.vis_floorplan:
@@ -2576,21 +2437,21 @@ class Runner:
             data_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}"
             if not os.path.exists(data_dir): os.makedirs(data_dir)
 
-            # self.do_panoramic_action(self.cur_node)
-            # self.do_time_steps(data_idx)
+            self.do_panoramic_action(self.cur_node)
+            self.do_time_steps(data_idx)
 
-            try:
-
-
-                self.do_panoramic_action(self.cur_node)
-                self.do_time_steps(data_idx)
-
-            except KeyboardInterrupt:
-                print("KeyboardInterrupt")
-                break
-
-            except:
-                pass
+            # try:
+            #
+            #
+            #     self.do_panoramic_action(self.cur_node)
+            #     self.do_time_steps(data_idx)
+            #
+            # except KeyboardInterrupt:
+            #     print("KeyboardInterrupt")
+            #     break
+            #
+            # except:
+            #     pass
 
 
 
@@ -2697,6 +2558,7 @@ class Runner:
                                                    curr_position=agent.get_state().position - self.abs_init_position,
                                                    curr_goal_position=self.vis_object_goal_position,
                                                    result=result)
+
 
 
             with open(
