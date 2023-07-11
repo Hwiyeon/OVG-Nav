@@ -393,17 +393,16 @@ class Runner:
 
 
 
-    def get_vis_grid_pose(self, pose):
+    def get_vis_grid_pose(self, pose, lv):
         if len(pose) == 3:
-            pose = np.array(pose) + np.array(self.abs_init_position)
-            grid_y, grid_x = to_grid(pose[2], pose[0], self.map_size, self._sim)
+            pose = np.array(pose)
+            grid_y, grid_x = to_grid(pose[2], pose[0], self.map_size[lv], self._sim)
         elif len(pose) == 2:
-            grid_y, grid_x = to_grid(pose[1], pose[0], self.map_size, self._sim)
+            grid_y, grid_x = to_grid(pose[1], pose[0], self.map_size[lv], self._sim)
         return (grid_x, grid_y)
 
     def node_value_by_obj_dist(self, dist, max_dist=15.0):
         return max(1 - dist / max_dist, 0)
-
 
     def vis_obj_viewpoint_on_floormap(self):
         self.goal_map = []
@@ -447,34 +446,45 @@ class Runner:
         print(f'Visualize goal object viewpoint on floorplan done with level {len(self.level_range)} and goal obj class {len(self.goal_obj_names)}')
 
 
-    def vis_topdown_graph_map(self, vis_map, graph_map, vis_obj_score=None, curr_node_id=None, curr_goal_node_id=None, curr_goal_position=None,
-                              bias_position=None):
+    def vis_topdown_graph_map(self, vis_map, graph_map, vis_obj_score=None, curr_node_id=None, curr_goal_node_id=None,
+                              bias_position=None, curr_goal_position=None, visited_positions=None):
         node_list = list(graph_map.node_by_id.values())
 
         for edge in list(graph_map.edges):
             if not edge.draw:
                 pos1 = np.array(edge.nodes[0].pos) if edge.nodes[0].vis_pos is None else np.array(edge.nodes[0].vis_pos)
                 pos2 = np.array(edge.nodes[1].pos) if edge.nodes[1].vis_pos is None else np.array(edge.nodes[1].vis_pos)
-                node_grid1 = self.get_vis_grid_pose(pos1)
-                node_grid2 = self.get_vis_grid_pose(pos2)
+                node_grid1 = self.get_vis_grid_pose(pos1 + bias_position, self.curr_level)
+                node_grid2 = self.get_vis_grid_pose(pos2 + bias_position, self.curr_level)
+                # node_grid1 = self.get_vis_grid_pose(np.array(edge.nodes[0].pos) + bias_position, self.curr_level)
+                # node_grid2 = self.get_vis_grid_pose(np.array(edge.nodes[1].pos) + bias_position, self.curr_level)
                 vis_map = cv2.line(vis_map, node_grid1, node_grid2, (0, 64, 64), 5)
                 edge.draw = True
 
+        # cm_scores = []
+        # for node in node_list:
+        #     cm_scores.append(node.cm_score)
+        # cm_scores = np.array(cm_scores)
+        # cm_scores = np.exp(cm_scores) / np.sum(np.exp(cm_scores))
 
-
-        for node in node_list:
+        for idx, node in enumerate(node_list):
 
             # if node.draw and node.nodeid != curr_node_id and node.nodeid != curr_goal_node_id:
             #     continue
-            node_pos = np.array(node.pos) if node.vis_pos is None else np.array(node.vis_pos)
 
-            node_grid = self.get_vis_grid_pose(node_pos)
+            node_pos = np.array(node.pos) if node.vis_pos is None else np.array(node.vis_pos)
+            node_grid = self.get_vis_grid_pose(node_pos + bias_position, self.curr_level)
+            # node_grid = self.get_vis_grid_pose(np.array(node.pos) + bias_position, self.curr_level)
             if vis_obj_score is not None:
                 # color = (np.array((0, 255, 0)) * self.node_value_by_obj_dist(node.dist_to_objs[vis_obj_score])).astype(int)
-                color = (np.array((0, 255, 0)) * node.cm_score).astype(int)
-                color = tuple([color[i].item() for i in range(3)])
-                cand_color = (np.array((0, 0, 255)) * self.node_value_by_obj_dist(
-                    node.dist_to_objs[vis_obj_score])).astype(int)
+                # color = (np.array((0, 255, 0)) * node.cm_score).astype(int)
+                # color = tuple([color[i].item() for i in range(3)])
+                color = (0, 255, 0)
+
+                # cand_color = (np.array((0, 0, 255)) * self.node_value_by_obj_dist(
+                #     node.dist_to_objs[vis_obj_score])).astype(int)
+                # cand_color = (np.array((0, 0, 255)) * node.cm_score).astype(int)
+                cand_color = (np.array((0, 0, 255))).astype(int)
                 cand_color = tuple([cand_color[i].item() for i in range(3)])
                 goal_color = (255, 255, 0)
             else:
@@ -489,23 +499,114 @@ class Runner:
                     vis_map = cv2.circle(vis_map, node_grid, 10, color, -1)
             elif node.nodeid == curr_goal_node_id:
                 vis_map = cv2.circle(vis_map, node_grid, 10, goal_color, -1)
+                # vis_map = cv2.rectangle(vis_map, (node_grid[0] - 8, node_grid[1] - 8),
+                #                         (node_grid[0] + 8, node_grid[1] + 8),
+                #                         goal_color, -1)
             else:
                 vis_map = cv2.circle(vis_map, node_grid, 10, cand_color, -1)
 
             node.draw = True
 
+        if visited_positions is not None:
+            for pos in visited_positions:
+                node_grid = self.get_vis_grid_pose(pos + bias_position, self.curr_level)
+                vis_map = cv2.circle(vis_map, node_grid, 5, (125, 0, 0), -1)
+
         if curr_goal_position is not None:
-            node_grid = self.get_vis_grid_pose(curr_goal_position)
-            vis_map = cv2.circle(vis_map, node_grid, 10, (255, 0, 255), -1)
+            node_grid = self.get_vis_grid_pose(curr_goal_position + bias_position, self.curr_level)
+            vis_map = cv2.rectangle(vis_map, (node_grid[0] - 8, node_grid[1] - 8), (node_grid[0] + 8, node_grid[1] + 8),
+                                    (255, 255, 0), -1)
+
+
+
 
 
         return vis_map
 
-    def vis_pos_on_topdown_map(self, pos):
-        vis_map = self.map.copy()
-        node_grid = self.get_vis_grid_pose(pos)
-        vis_map = cv2.circle(vis_map, node_grid, 10, (0, 255, 0), -1)
+    def vis_pos_on_topdown_map(self, pos, lv, vis_map=None, color=(255, 0, 0)):
+        if vis_map is None:
+            vis_map = self.map[self.curr_level].copy()
+        else:
+            vis_map = vis_map.copy()
+        node_grid = self.get_vis_grid_pose(pos, lv)
+        # vis_map = cv2.circle(vis_map, node_grid, 10, (0, 255, 0), -1)
+        vis_map = cv2.rectangle(vis_map, (node_grid[0] - 8, node_grid[1] - 8), (node_grid[0] + 8, node_grid[1] + 8),
+                                color, -1)
         return vis_map
+
+    def save_viewpoint_on_topdown_map(self, save_dir=None, vis_map=None, bias_position=None, curr_position=None, curr_goal_position=None, result=None):
+        if vis_map is None:
+            vis_map = self.goal_map[self.curr_level][self.goal_obj_names[self.goal_class_idx]].copy()
+
+        # for pos in self.env_class_goal_view_point[self.goal_obj_names[self.goal_class_idx]]:
+        #     ## view points in dataset ##
+        #     node_grid = self.get_vis_grid_pose(pos)
+        #     # vis_map = cv2.circle(vis_map, node_grid, 3, (0, 255, 0), -1)
+        #     shapes = np.zeros_like(vis_map, np.uint8)
+        #     shapes = cv2.circle(shapes, node_grid, 3, (255, 180, 0), -1)
+        #     alpha = 0.7
+        #     # mask = shapes.astype(bool)
+        #     mask = np.repeat(np.sum(shapes, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
+        #     vis_map[mask] = cv2.addWeighted(vis_map, alpha, shapes, 1 - alpha, 0)[mask]
+        #
+        # for pos in np.array([obj['position'] for obj in self.env_goal_obj_info if obj['category'] == self.goal_class_idx]):
+        #     ## goal object positions in dataset
+        #     node_grid = self.get_vis_grid_pose(pos)
+        #     vis_map = cv2.circle(vis_map, node_grid, 10, (255, 180, 0), -1)
+
+        mask = np.repeat(np.sum(self.cur_graph_map, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
+        vis_map[mask] = cv2.addWeighted(vis_map, 0.0, self.cur_graph_map, 1.0, 0)[mask]
+
+        if curr_position is not None:
+            node_grid = self.get_vis_grid_pose(curr_position + bias_position, self.curr_level)
+            vis_map = cv2.rectangle(vis_map, (node_grid[0] - 8, node_grid[1] - 8), (node_grid[0] + 8, node_grid[1] + 8),
+                                    (255, 0, 0), -1)
+        if curr_goal_position is not None:
+            node_grid = self.get_vis_grid_pose(curr_goal_position + bias_position, self.curr_level)
+            vis_map = cv2.rectangle(vis_map, (node_grid[0] - 8, node_grid[1] - 8), (node_grid[0] + 8, node_grid[1] + 8),
+                                    (255, 255, 0), -1)
+
+        if result is not None:
+            success = 'SUCCESS' if result['success'] == 1 else 'FAIL'
+            txt = 'goal: {}, {}, SPL: {:.4f}, min_dist_to_viewpoint {:.4f}, min_dist_to_object_center {:.4f}, actions {}'.format(result['goal object'], success,
+                                                                                  result['spl'],
+                                                                                  result['min_dist_to_viewpoint'],
+                                                                                  result['min_dist_to_goal_center'],
+                                                                                  result['action step'])
+
+            txt1 = 'goal: {}, {}, SPL: {:.4f}, actions {}'.format(
+                result['goal object'], success,
+                result['spl'],
+                result['action step'])
+            txt2 = 'viewpoint dist {:.4f}, obj center dist {:.4f}'.format(
+                result['min_dist_to_viewpoint'],
+                result['min_dist_to_goal_center'])
+
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 1
+            color = (255, 255, 255)
+            thickness = 2
+            text_size = cv2.getTextSize(txt, font, font_scale, thickness)[0]
+            text_position1 = (10, vis_map.shape[0] + text_size[1] * 2 + 10)
+            text_position2 = (10, vis_map.shape[0] + text_size[1] * 3 + 5 + 10)
+
+            canvas_height = vis_map.shape[0] + text_size[1] * 3 + 20
+            canvas_width = vis_map.shape[1]
+            canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
+            canvas[:vis_map.shape[0], :] = vis_map
+            canvas = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
+            cv2.putText(canvas, txt1, text_position1, font, font_scale, color, thickness)
+            cv2.putText(canvas, txt2, text_position2, font, font_scale, color, thickness)
+            if isinstance(save_dir, list):
+                for dir in save_dir:
+                    cv2.imwrite(dir, canvas)
+            else:
+                cv2.imwrite(save_dir, canvas)
+        else:
+            plt.imsave(save_dir, vis_map)
+
+        return
 
 
     def set_level_range(self):
@@ -518,65 +619,82 @@ class Runner:
 
         return
 
-    def get_bbox_from_pos_size(self, position, size):
+    def get_bbox_from_pos_size(self, position, size, lv):
         bbox = np.array([
             [position[0] - size[0] / 2, position[2] - size[2] / 2],
             [position[0] + size[0] / 2, position[2] + size[2] / 2]
         ])
         grid_bbox = np.array([
-            self.get_vis_grid_pose(bbox[0]),
-            self.get_vis_grid_pose(bbox[1])
+            self.get_vis_grid_pose(bbox[0], lv),
+            self.get_vis_grid_pose(bbox[1], lv)
         ])
         return grid_bbox
 
-    def vis_topdown_obj_map(self, vis_map, obj_category):
-        for obj in self.env_obj_info:
-            agent_level = self.check_position2level(self.scene_height)
-            if obj['category'] == obj_category and agent_level == obj['level']:
-                grid_bbox = self.get_bbox_from_pos_size(obj['position'], obj['sizes'])
-                grid_bbox = grid_bbox.tolist()
-                shapes = np.zeros_like(vis_map, np.uint8)
-                cv2.rectangle(shapes, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (0, 0, 128), -1)
-                alpha = 0.3
-                mask = shapes.astype(bool)
-                vis_map[mask] = cv2.addWeighted(vis_map, alpha, shapes, 1 - alpha, 0)[mask]
-
-        return vis_map
-
-    def vis_topdown_goal_obj_map(self, vis_map, goal_obj_category):
-        for obj in self.env_goal_obj_info:
-            agent_level = self.check_position2level(self.scene_height)
-            if obj['category'] == goal_obj_category and agent_level == obj['level']:
-                grid_bbox = self.get_bbox_from_pos_size(obj['position'], obj['sizes'])
-                grid_bbox = grid_bbox.tolist()
-                shapes = np.zeros_like(vis_map, np.uint8)
-                cv2.rectangle(shapes, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (255, 0, 0), -1)
-                alpha = 0.3
-                mask = shapes.astype(bool)
-                vis_map[mask] = cv2.addWeighted(vis_map, alpha, shapes, 1-alpha, 0)[mask]
-                # vis_map = cv2.rectangle(vis_map, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (255, 0, 0), -1)
-        return vis_map
+    # def vis_topdown_obj_map(self, vis_map, obj_category):
+    #     for obj in self.env_obj_info:
+    #         agent_level = self.check_position2level(self.scene_height)
+    #         if obj['category'] == obj_category and agent_level == obj['level']:
+    #             grid_bbox = self.get_bbox_from_pos_size(obj['position'], obj['sizes'])
+    #             grid_bbox = grid_bbox.tolist()
+    #             shapes = np.zeros_like(vis_map, np.uint8)
+    #             cv2.rectangle(shapes, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (0, 0, 128), -1)
+    #             alpha = 0.3
+    #             mask = shapes.astype(bool)
+    #             vis_map[mask] = cv2.addWeighted(vis_map, alpha, shapes, 1 - alpha, 0)[mask]
+    #
+    #     return vis_map
+    #
+    # def vis_topdown_goal_obj_map(self, vis_map, goal_obj_category):
+    #     for obj in self.env_goal_obj_info:
+    #         agent_level = self.check_position2level(self.scene_height)
+    #         if obj['category'] == goal_obj_category and agent_level == obj['level']:
+    #             grid_bbox = self.get_bbox_from_pos_size(obj['position'], obj['sizes'])
+    #             grid_bbox = grid_bbox.tolist()
+    #             shapes = np.zeros_like(vis_map, np.uint8)
+    #             cv2.rectangle(shapes, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (255, 128, 0), -1)
+    #             alpha = 0.3
+    #             # mask = shapes.astype(bool)
+    #             mask = np.repeat(np.sum(shapes, axis=2).astype(bool)[:, :, np.newaxis], 3, axis=2)
+    #             vis_map[mask] = cv2.addWeighted(vis_map, alpha, shapes, 1-alpha, 0)[mask]
+    #             # vis_map = cv2.rectangle(vis_map, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (255, 0, 0), -1)
+    #     return vis_map
 
 
     def vis_topdown_map_with_captions(self, graph_map, curr_node=None, curr_goal_node=None,
-                                      bias_position=None,
-                                      curr_goal_position=None, vis_goal_obj_score=None, vis_obj=None, save_dir=None):
+                                      bias_position=None, curr_position=None, curr_goal_position=None,
+                                      vis_goal_obj_score=None, vis_obj=None,
+                                      visited_positions=None):
         # vis_map = self.map.copy()
-        vis_map = self.cur_map
-        if vis_obj is not None:
-            vis_map = self.vis_topdown_obj_map(vis_map, vis_obj)
-        if vis_goal_obj_score is not None:
-            vis_map = self.vis_topdown_goal_obj_map(vis_map, vis_goal_obj_score)
+        vis_map = self.cur_graph_map
+        # if vis_obj is not None:
+        #     vis_map = self.vis_topdown_obj_map(vis_map, vis_obj)
+
+        # if vis_goal_obj_score is not None:
+        #     vis_goal_obj_score = self.goal_class_idx
+        #     vis_map = self.vis_topdown_goal_obj_map(vis_map, vis_goal_obj_score)
 
         curr_node_id, curr_goal_node_id = None, None
         if curr_node is not None:
             curr_node_id = curr_node.nodeid
         if curr_goal_node is not None:
             curr_goal_node_id = curr_goal_node.nodeid
-        vis_map = self.vis_topdown_graph_map(vis_map, graph_map, vis_goal_obj_score,
+        vis_map = self.vis_topdown_graph_map(vis_map, graph_map, vis_obj_score=vis_goal_obj_score,
                                                 curr_node_id=curr_node_id, curr_goal_node_id=curr_goal_node_id,
                                                 bias_position=bias_position,
-                                                curr_goal_position=curr_goal_position)
+                                                # curr_goal_position=curr_goal_position,
+                                                visited_positions=visited_positions)
+
+        self.cur_graph_map = vis_map
+        # mask = self.cur_graph_map.astype(bool)
+        mask = np.repeat(np.sum(self.cur_graph_map, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
+        self.base_map[mask] = cv2.addWeighted(self.base_map, 0., self.cur_graph_map, 1.0, 0)[mask]
+
+        if curr_position is not None:
+            vis_map = self.vis_pos_on_topdown_map(curr_position + bias_position, self.curr_level, self.base_map)
+        if curr_goal_position is not None:
+            vis_map = self.vis_pos_on_topdown_map(curr_goal_position + bias_position, self.curr_level, vis_map, color=(255, 255, 0))
+
+
 
         return vis_map
         # figure, ax = plt.subplots(1, 1, facecolor="whitesmoke")

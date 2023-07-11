@@ -3,7 +3,7 @@ import os
 os.environ["OMP_NUM_THREADS"] = "1"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "8, 9"
 import sys
-sys.path.append('/home/hwing/Projects/offline_objgoal')
+sys.path.append('/home/hwing/Projects/OVG-Nav')
 
 
 import argparse
@@ -13,17 +13,17 @@ import argparse
 parser = argparse.ArgumentParser()
 
 ## eval configs ##
-parser.add_argument("--gpu_list", type=str, default="4")
+parser.add_argument("--gpu_list", type=str, default="0")
 parser.add_argument("--model_gpu", type=str, default="0")
 parser.add_argument("--sim_gpu", type=str, default="0")
 # parser.add_argument("--data", type=str, default="gibosn")
 parser.add_argument("--n_for_env", type=int, default=2000)
 parser.add_argument("--max_step", type=int, default=500)
 parser.add_argument("--dataset", type=str, default='mp3d')
-parser.add_argument("--run_type", type=str, default="train")
+parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=0)
-parser.add_argument("--data_split_max", type=int, default=23)
-parser.add_argument("--save_dir", type=str, default="/disk4/hwing/Dataset/cm_graph/{}/0704/21cat_relative_pose_step_by_step_pano")
+parser.add_argument("--data_split_max", type=int, default=11)
+parser.add_argument("--save_dir", type=str, default="/disk4/hwing/Dataset/cm_graph/{}/0704/21cat_relative_pose_step_by_step_pano_edge2.0")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -53,9 +53,9 @@ parser.add_argument("--semantic_sensor", type=bool, default=False)
 parser.add_argument("--max_frames", type=int, default=500)
 parser.add_argument("--sensing_range", type=float, default=10.0)
 parser.add_argument("--move_forward", type=float, default=0.25)
-parser.add_argument("--edge_range", type=float, default=1.0)
+parser.add_argument("--edge_range", type=float, default=2.0)
 parser.add_argument("--last_mile_range", type=float, default=3.0)
-parser.add_argument("--act_rot", type=int, default=10)
+parser.add_argument("--act_rot", type=int, default=30)
 parser.add_argument("--cand_rot", type=int, default=30)
 
 ## noise configs ##
@@ -73,14 +73,14 @@ parser.add_argument("--map_resolution", type=int, default=5)
 
 
 ## model configs ##
-parser.add_argument("--detection_model", type=str, default="/home/hwing/Projects/offline_objgoal/modules/detector")
-parser.add_argument("--free_space_model", type=str, default="/home/hwing/Projects/offline_objgoal/modules/free_space_model/ckpts/split_lr0.001_0227_range_1.0/best_model_1.pth")
+parser.add_argument("--detection_model", type=str, default="/home/hwing/Projects/OVG-Nav/modules/detector")
+parser.add_argument("--free_space_model", type=str, default="/home/hwing/Projects/OVG-Nav/modules/free_space_model/ckpts/split_lr0.001_0227_range_2.0/best_model_1.pth")
 parser.add_argument("--CLIP_model", type=str, default="ViT-B/32")
-parser.add_argument("--COMET_model", type=str, default="/home/hwing/Projects/offline_objgoal/modules/comet_relation/comet-atomic_2020_BART")
+parser.add_argument("--COMET_model", type=str, default="/home/hwing/Projects/OVG-Nav/modules/comet_relation/comet-atomic_2020_BART")
 
 ## VO model configs ##
 parser.add_argument("--use_vo", type=bool, default=False)
-parser.add_argument('--max_depth', type=float, default=10., help='maximum depth value')
+parser.add_argument('--max_depth', type=float, default=5., help='maximum depth value')
 parser.add_argument('--min_depth', type=float, default=0.1, help='minimum depth value')
 parser.add_argument('--KM_resize', type=int, nargs='+', default=[320, 240],
         help='Resize the input image before running inference. If two numbers, '
