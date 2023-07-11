@@ -14,7 +14,7 @@ def collect_eval_results(eval_name, obj_type='mp3d'):
         goal_obj_names = gibson_goal_obj_names
     elif obj_type == 'mp3d':
         goal_obj_names = mp3d_goal_obj_names
-    elif obj_type == 'mp3d_all':
+    elif obj_type == 'mp3d_21':
         goal_obj_names = obj_names
 
     obj_success_results = {}
@@ -51,5 +51,6 @@ def collect_eval_results(eval_name, obj_type='mp3d'):
 
 
 if __name__ == '__main__':
-    success_results = collect_eval_results('/disk4/hwing/Dataset/cm_graph/mp3d/val/0701_vo/actrot30_nobias_1obs_pano_cometscore')
+    success_results = collect_eval_results('/home/hwing/Dataset/cm_graph/mp3d/val/0707_21_vo/actrot30_1obs_pano_cometscore',
+                                           obj_type='mp3d_21')
     print(success_results)
