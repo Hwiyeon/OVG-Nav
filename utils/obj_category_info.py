@@ -25,6 +25,28 @@ obj_names = ["chair",             # 0
              ]
 
 ## rednet 21 categories
+rednet_obj_names = ["chair",             # 0
+             "table",             # 1
+             "picture",           # 2
+             "cabinet",           # 3
+             "cushion",           # 4
+             "sofa",              # 5
+             "bed",               # 6
+             "chest_of_drawers",  # 7
+             "plant",             # 8
+             "sink",              # 9
+             "toilet",            # 10
+             "stool",             # 11
+             "towel",             # 12
+             "tv_monitor",        # 13
+             "shower",            # 14
+             "bathhub",           # 15
+             "counter",           # 16
+             "fireplace",         # 17
+             "gym_equipment",     # 18
+             "seating",           # 19
+             "clothes"            # 20
+             ]
 category_to_task_category_id = {
     "chair": 0,
     "table": 1,
