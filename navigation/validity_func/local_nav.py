@@ -5,7 +5,6 @@ import numpy as np
 import cv2
 import skimage
 import seaborn as sns
-from habitat.sims.habitat_simulator.actions import HabitatSimActions
 from navigation.validity_func.fmm_planner import FMMPlanner
 from navigation.validity_func.map_builder import build_mapper
 from navigation.validity_func.validity_utils import (
@@ -13,7 +12,7 @@ from navigation.validity_func.validity_utils import (
     get_sim_location,
     get_rel_pose_change,
 )
-from navigation.navigation_utils.sim_utils import NoisySensor
+# from navigation.navigation_utils.sim_utils import NoisySensor
 
 
 class LocalAgent(object):
@@ -25,8 +24,8 @@ class LocalAgent(object):
         self.actuation_noise = args.noisy_action
         self.pose_noise = args.noisy_pose
         self.noisy_sensor = None
-        if self.actuation_noise or self.pose_noise:
-            self.noisy_sensor = NoisySensor(args, noise_level=1.0)
+        # if self.actuation_noise or self.pose_noise:
+        #     self.noisy_sensor = NoisySensor(args, noise_level=1.0)
         self.mapper = build_mapper(args)
         self.map_size_cm = args.map_size_cm
         self.map_resolution = args.map_resolution
@@ -470,68 +469,3 @@ class LocalAgent(object):
 
         return colored
 
-
-def loop_nav(sim, local_agent, start_pos, start_rot, delta_dist, delta_rot, max_steps):
-    prev_poses = []
-    nav_length = 0.0
-    terminate_local = 0
-    obs = sim.get_observations_at(start_pos, quaternion.from_rotation_vector(start_rot))
-    curr_depth_img = obs["depth"]
-    local_agent.update_local_map(curr_depth_img)
-    local_agent.set_goal(delta_dist, delta_rot)
-    action, terminate_local = local_agent.navigate_local()
-    previous_pose = start_pos
-    for _ in range(max_steps):
-        if local_agent.actuation_noise:
-            if action == 1:
-                obs = sim.step(HabitatSimActions.MOVE_FORWARD)
-            elif action == 2:
-                obs = sim.step(HabitatSimActions.TURN_LEFT)
-            elif action == 3:
-                obs = sim.step(HabitatSimActions.TURN_RIGHT)
-        else:
-            obs = sim.step(action)
-        curr_depth_img = obs["depth"]
-        curr_position = sim.get_agent_state().position
-        curr_rotation = quaternion.as_float_array(sim.get_agent_state().rotation)
-        prev_poses.append([curr_position, curr_rotation])
-
-        if local_agent.pose_noise:
-            curr_position = np.asarray(
-                local_agent.noisy_sensor.get_noisy_pose(
-                    action, previous_pose, curr_position
-                )
-            )
-        local_agent.new_sim_origin = get_sim_location(
-            curr_position, sim.get_agent_state().rotation
-        )
-        nav_length += np.linalg.norm(previous_pose - curr_position)
-        previous_pose = curr_position
-        local_agent.update_local_map(curr_depth_img)
-        action, terminate_local = local_agent.navigate_local()
-        if terminate_local == 1:
-            break
-
-    return (
-        sim.get_agent_state().position,
-        quaternion.as_float_array(sim.get_agent_state().rotation),
-        nav_length,
-        prev_poses,
-    )
-
-
-def map_from_actions(sim, local_agent, start_pos, start_rot, action_list):
-    maps = []
-    obs = sim.get_observations_at(start_pos, quaternion.from_rotation_vector(start_rot))
-    curr_depth_img = obs["depth"]
-    local_agent.update_local_map(curr_depth_img)
-    maps.append(local_agent.get_map())
-    for action in action_list:
-        obs = sim.step(action)
-        curr_depth_img = obs["depth"]
-        curr_position = sim.get_agent_state().position
-        curr_rotation = sim.get_agent_state().rotation
-        local_agent.new_sim_origin = get_sim_location(curr_position, curr_rotation)
-        local_agent.update_local_map(curr_depth_img)
-        maps.append(local_agent.get_map())
-    return maps

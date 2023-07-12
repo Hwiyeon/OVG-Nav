@@ -8,6 +8,8 @@ import habitat_sim.agent
 import habitat_sim.bindings as hsim
 import numpy as np
 import magnum as mn
+import pickle
+import os
 
 
 default_sim_settings = {
@@ -74,6 +76,8 @@ def make_settings(args, scene):
     if hasattr(args, "noisy_depth"):
         settings["noisy_depth"] = args.noisy_depth
         settings["noisy_depth_multiplier"] = args.noisy_depth_multiplier
+    if hasattr(args, "noisy_action"):
+        settings["noisy_action"] = args.noisy_action
 
     settings["scene"] = scene
     # settings["save_png"] = args.save_png
@@ -272,7 +276,7 @@ def make_cfg(settings):
         sensor_specs.append(equirect_semantic_sensor_spec)
 
 
-    if "add_panoramic_sensor" in settings:
+    if "add_panoramic_sensor" in settings and settings["add_panoramic_sensor"]:
         angles = [int(i*settings["pano_turn_angle"]) for i in range(int(360/settings["pano_turn_angle"]))]
         pano_sensors = {}
         for i, r in enumerate(angles):
@@ -336,17 +340,91 @@ def make_cfg(settings):
     # create agent specifications
     agent_cfg = habitat_sim.agent.AgentConfiguration()
     agent_cfg.sensor_specifications = sensor_specs
-    agent_cfg.action_space = {
-        "move_forward": habitat_sim.agent.ActionSpec(
-            "move_forward", habitat_sim.agent.ActuationSpec(amount=settings['move_forward'])
-        ),
-        "turn_left": habitat_sim.agent.ActionSpec(
-            "turn_left", habitat_sim.agent.ActuationSpec(amount=settings['act_rot'])
-        ),
-        "turn_right": habitat_sim.agent.ActionSpec(
-            "turn_right", habitat_sim.agent.ActuationSpec(amount=settings['act_rot'])
-        ),
-    }
+    if not settings['noisy_action']:
+        agent_cfg.action_space = {
+            "move_forward": habitat_sim.agent.ActionSpec(
+                "move_forward", habitat_sim.agent.ActuationSpec(amount=settings['move_forward'])
+            ),
+            "turn_left": habitat_sim.agent.ActionSpec(
+                "turn_left", habitat_sim.agent.ActuationSpec(amount=settings['act_rot'])
+            ),
+            "turn_right": habitat_sim.agent.ActionSpec(
+                "turn_right", habitat_sim.agent.ActuationSpec(amount=settings['act_rot'])
+            ),
+        }
+    else:
+        ## -- noisy action -- #
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        noise_dir = current_dir + "/noise_models/"
+        actuation_noise_fwd = pickle.load(open(noise_dir + "actuation_noise_fwd.pkl", "rb"))
+        actuation_noise_right = pickle.load(open(noise_dir + "actuation_noise_right.pkl", "rb"))
+        actuation_noise_left = pickle.load(open(noise_dir + "actuation_noise_left.pkl", "rb"))
+
+        def _custom_action_impl(
+                scene_node: habitat_sim.SceneNode,
+                delta_dist: float,  # in metres
+                delta_dist_angle: float,  # in degrees
+                delta_angle: float,  # in degrees
+        ):
+            forward_ax = (
+                    np.array(scene_node.absolute_transformation().rotation_scaling())
+                    @ habitat_sim.geo.FRONT
+            )
+            move_angle = np.deg2rad(delta_dist_angle)
+            rotation = habitat_sim.utils.quat_from_angle_axis(move_angle, habitat_sim.geo.UP)
+            move_ax = habitat_sim.utils.quat_rotate_vector(rotation, forward_ax)
+            scene_node.translate_local(move_ax * delta_dist)
+            scene_node.rotate_local(mn.Deg(delta_angle), habitat_sim.geo.UP)
+
+        def _noisy_action_impl(scene_node: habitat_sim.SceneNode, action: int):
+            if action == 1:  ## Forward
+                dx, dy, do = actuation_noise_fwd.sample()[0][0]
+            elif action == 2:  ## Left
+                dx, dy, do = actuation_noise_left.sample()[0][0]
+            elif action == 3:  ## Right
+                dx, dy, do = actuation_noise_right.sample()[0][0]
+
+            delta_dist = np.sqrt(dx ** 2 + dy ** 2)
+            delta_dist_angle = np.rad2deg(np.arctan2(-dy, dx))
+            delta_angle = -do
+
+            delta_dist = delta_dist * settings['move_forward'] / 0.25         ## noise model assumes 0.25m forward
+            delta_angle = delta_angle * settings['act_rot'] / 10    ## noise model assumes 10 degree rotation
+
+            _custom_action_impl(scene_node, delta_dist, delta_dist_angle, delta_angle)
+
+        @habitat_sim.registry.register_move_fn(body_action=True)
+        class NoisyForward(habitat_sim.SceneNodeControl):
+            def __call__(self, scene_node: habitat_sim.SceneNode, actuation_spec: int):
+                _noisy_action_impl(scene_node, 1)
+
+        @habitat_sim.registry.register_move_fn(body_action=True)
+        class NoisyLeft(habitat_sim.SceneNodeControl):
+            def __call__(self, scene_node: habitat_sim.SceneNode, actuation_spec: int):
+                _noisy_action_impl(scene_node, 2)
+
+        @habitat_sim.registry.register_move_fn(body_action=True)
+        class NoisyRight(habitat_sim.SceneNodeControl):
+            def __call__(self, scene_node: habitat_sim.SceneNode, actuation_spec: int):
+                _noisy_action_impl(scene_node, 3)
+
+
+        habitat_sim.registry.register_move_fn(NoisyForward, name="move_forward", body_action=True)
+        habitat_sim.registry.register_move_fn(NoisyLeft, name="turn_left", body_action=True)
+        habitat_sim.registry.register_move_fn(NoisyRight, name="turn_right", body_action=True)
+
+        agent_cfg.action_space = {
+            "move_forward": habitat_sim.agent.ActionSpec(
+                "move_forward", habitat_sim.agent.ActuationSpec(amount=settings['move_forward'])
+            ),
+            "turn_left": habitat_sim.agent.ActionSpec(
+                "turn_left", habitat_sim.agent.ActuationSpec(amount=settings['act_rot'])
+            ),
+            "turn_right": habitat_sim.agent.ActionSpec(
+                "turn_right", habitat_sim.agent.ActuationSpec(amount=settings['act_rot'])
+            ),
+        }
 
     # override action space to no-op to test physics
     if sim_cfg.enable_physics:
@@ -377,6 +455,8 @@ def make_cfg(settings):
         agent_config.action_space["turn_panoramic"] = habitat_sim.ActionSpec(
             "turn_panoramic", turn_panoramic_angle
         )
+
+
 
     if "use_panoramic_turn" in settings:
         add_panoramic_turn(settings["use_panoramic_turn"])

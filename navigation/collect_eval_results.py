@@ -51,6 +51,6 @@ def collect_eval_results(eval_name, obj_type='mp3d'):
 
 
 if __name__ == '__main__':
-    success_results = collect_eval_results('/home/hwing/Dataset/cm_graph/mp3d/val/0707_21_vo/actrot30_1obs_pano_cometscore',
+    success_results = collect_eval_results('/home/hwing/Dataset/cm_graph/mp3d/val/0707_21_vo/actrot30_1obs_pano_cometscore_adj0.5',
                                            obj_type='mp3d_21')
     print(success_results)

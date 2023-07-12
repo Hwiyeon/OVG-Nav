@@ -253,7 +253,7 @@ class Runner:
             video.write((image * 255).astype(np.uint8))
         video.release()
 
-    def make_total_frame(self, rgb, depth, graph, local_map, pano_rgb, info):
+    def make_total_frame(self, rgb, depth, graph, local_map, info):
         rh, rw = np.shape(rgb)[:2]
         rh, rw = int(rh/2), int(rw/2)
         small_rgb = cv2.resize(rgb, (rw, rh))
@@ -261,7 +261,6 @@ class Runner:
         small_depth = ((np.clip(small_depth, 0.1, 10.) / 10.) * 255).astype(np.uint8)
         gh, gw = np.shape(graph)[:2]
         gh, gw = rh*2, int(rh*2 * gw / gh)
-        ph, pw = np.shape(pano_rgb)[:2]
 
         lh, lw = np.shape(local_map)[:2]
         local_map = cv2.flip(local_map, 1)
@@ -270,14 +269,13 @@ class Runner:
 
         small_graph = cv2.resize(graph, (gw, gh))
         max_h = max(rh*2, gh, lh)
-        max_w = max(rw+gw+lw, pw)
+        max_w = rw+gw+lw
 
-        frame = np.zeros([max_h+ph, max_w, 3])
+        frame = np.zeros([max_h, max_w, 3])
         frame[:rh, :rw, :] = small_rgb[:, :, :3]
         frame[rh:rh*2, :rw, :] = np.tile(small_depth[:, :, np.newaxis], [1, 1, 3])
         frame[:gh, rw:rw+gw, ] = small_graph
         frame[:lh, rw+gw:rw+gw+lw, ] = local_map[:, :, :3]
-        frame[max_h:, :pw, ] = pano_rgb[:, :, :3]
         frame = frame.astype(np.uint8)
 
 
@@ -1423,8 +1421,8 @@ class Runner:
 
 
 
-        pano_obs = self.panoramic_obs(obs, semantic=True)
-        self.pano_rgb_list.append(pano_obs['rgb_panoramic'])
+        # pano_obs = self.panoramic_obs(obs, semantic=True)
+        # self.pano_rgb_list.append(pano_obs['rgb_panoramic'])
         self.rgb_list.append(obs['color_sensor'])
         self.depth_list.append(obs['depth_sensor'])
 
@@ -1480,7 +1478,7 @@ class Runner:
 
             # det_pano, _, _, _, _, _ = self.detector.predicted_img(self.pano_rgb_list[-1].astype(np.uint8), show=True)
             total_frame = self.make_total_frame(det['det_img'], obs['depth_sensor'], vis_graph_map, vis_local_map,
-                                                pano_rgb=self.pano_rgb_list[-1],
+                                                # pano_rgb=self.pano_rgb_list[-1],
                                                 info=self.vis_info)
             self.vis_traj.append(total_frame)
 
@@ -1671,8 +1669,8 @@ class Runner:
 
                 det, det_dist = self.check_close_goal_det(obs['color_sensor'], obs['depth_sensor'], vis=True)
 
-                pano_obs = self.panoramic_obs(obs, semantic=True)
-                self.pano_rgb_list.append(pano_obs['rgb_panoramic'])
+                # pano_obs = self.panoramic_obs(obs, semantic=True)
+                # self.pano_rgb_list.append(pano_obs['rgb_panoramic'])
                 # self.rgb_list.append(det['det_img'])
                 self.rgb_list.append(obs['color_sensor'])
                 self.depth_list.append(obs['depth_sensor'])
@@ -1691,7 +1689,7 @@ class Runner:
                     vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
                     # det_pano, _, _, _, _, _ = self.detector.predicted_img(self.pano_rgb_list[-1].astype(np.uint8), show=True)
                     total_frame = self.make_total_frame(det['det_img'], obs['depth_sensor'], vis_graph_map, vis_local_map,
-                                                        pano_rgb=self.pano_rgb_list[-1],
+                                                        # pano_rgb=self.pano_rgb_list[-1],
                                                         info=self.vis_info)
                     self.vis_traj.append(total_frame)
 
@@ -1957,8 +1955,8 @@ class Runner:
             det, det_dist = self.check_close_goal_det(obs['color_sensor'], obs['depth_sensor'], vis=True)
 
             # self.rgb_list.append(det['det_img'])
-            pano_obs = self.panoramic_obs(obs, semantic=False)
-            self.pano_rgb_list.append(pano_obs['rgb_panoramic'])
+            # pano_obs = self.panoramic_obs(obs, semantic=False)
+            # self.pano_rgb_list.append(pano_obs['rgb_panoramic'])
             self.rgb_list.append(obs['color_sensor'])
             self.depth_list.append(obs['depth_sensor'])
 
@@ -2004,7 +2002,7 @@ class Runner:
                 self.vis_info['mode'] = 'Last mile'
                 # det_pano, _, _, _, _, _ = self.detector.predicted_img(self.pano_rgb_list[-1].astype(np.uint8), show=True)
                 total_frame = self.make_total_frame(det['det_img'], obs['depth_sensor'], vis_graph_map, vis_local_map,
-                                                    pano_rgb=self.pano_rgb_list[-1],
+                                                    # pano_rgb=self.pano_rgb_list[-1],
                                                     info=self.vis_info)
                 self.vis_traj.append(total_frame)
 
@@ -2358,8 +2356,8 @@ class Runner:
                 }
 
 
-            pano_obs = self.panoramic_obs(obs, semantic=True)
-            self.pano_rgb_list = [pano_obs['rgb_panoramic']]
+            # pano_obs = self.panoramic_obs(obs, semantic=True)
+            # self.pano_rgb_list = [pano_obs['rgb_panoramic']]
             self.rgb_list = [obs['color_sensor']]
             self.depth_list = [obs['depth_sensor']]
             det, det_dist = self.check_close_goal_det(obs['color_sensor'], obs['depth_sensor'], vis=True)
@@ -2439,7 +2437,7 @@ class Runner:
                 self.vis_info['mode'] = 'Exploration'
                 # det_pano, _, _, _, _, _ = self.detector.predicted_img(self.pano_rgb_list[-1].astype(np.uint8), show=True)
                 total_frame = self.make_total_frame(det['det_img'], obs['depth_sensor'], vis_graph_map, vis_local_map,
-                                                    pano_rgb=self.pano_rgb_list[-1],
+                                                    # pano_rgb=self.pano_rgb_list[-1],
                                                     info=self.vis_info)
                 self.vis_traj.append(total_frame)
 

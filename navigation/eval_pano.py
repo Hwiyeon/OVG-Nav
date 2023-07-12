@@ -116,7 +116,7 @@ import _pickle as cPickle
 
 from navigation.configs.settings_pano_navi import make_settings
 import eval_runner_pano as runner
-from utils.obj_category_info import gibson_goal_obj_names, mp3d_goal_obj_names
+from utils.obj_category_info import gibson_goal_obj_names, mp3d_goal_obj_names, rednet_obj_names
 
 
 
@@ -248,6 +248,9 @@ def main(env_list, dataset_list):
         with bz2.BZ2File(dataset_info_file, 'rb') as f:
             dataset_info = cPickle.load(f)
 
+
+    if args.goal_cat == 'mp3d_21':
+        goal_obj_names = rednet_obj_names
 
     obj_success_results = {}
     for obj_name in goal_obj_names:

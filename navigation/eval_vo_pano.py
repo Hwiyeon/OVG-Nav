@@ -20,9 +20,9 @@ parser.add_argument("--n_for_env", type=int, default=2000)
 parser.add_argument("--max_step", type=int, default=500)
 parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
-parser.add_argument("--data_split", type=int, default=0)
+parser.add_argument("--data_split", type=int, default=3)
 parser.add_argument("--data_split_max", type=int, default=11)
-parser.add_argument("--save_dir", type=str, default="/home/hwing/Dataset/cm_graph/{}/{}/0707_21_vo/actrot30_1obs_pano_cometscore_adj0.5")
+parser.add_argument("--save_dir", type=str, default="/home/hwing/Dataset/cm_graph/{}/{}/0707_21_vo/actrot30_1obs_pano_cometscore_adj0.5_test")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -65,7 +65,7 @@ parser.add_argument('--noisy_rgb_multiplier', type=float, default=0.1, help='use
 parser.add_argument('--noisy_depth', type=bool, default=False, help='use RedwoodDepthNoiseModel')
 parser.add_argument('--noisy_depth_multiplier', type=float, default=5., help='use RedwoodDepthNoiseModel noise multiplier')
 parser.add_argument("--noise_dir", type=str, default="navigation/noise_models")
-parser.add_argument('--noisy_action', type=bool, default=False, help='')
+parser.add_argument('--noisy_action', type=bool, default=True, help='')
 parser.add_argument('--noisy_pose', type=bool, default=False, help='')
 
 ## local navigation configs ##
@@ -114,7 +114,7 @@ import _pickle as cPickle
 
 from navigation.configs.settings_pano_navi import make_settings
 import eval_runner_vo_pano as runner
-from utils.obj_category_info import gibson_goal_obj_names, mp3d_goal_obj_names
+from utils.obj_category_info import gibson_goal_obj_names, mp3d_goal_obj_names, rednet_obj_names
 
 
 
@@ -247,6 +247,9 @@ def main(env_list, dataset_list):
         with bz2.BZ2File(dataset_info_file, 'rb') as f:
             dataset_info = cPickle.load(f)
 
+
+    if args.goal_cat == 'mp3d_21':
+        goal_obj_names = rednet_obj_names
 
     obj_success_results = {}
     for obj_name in goal_obj_names:
