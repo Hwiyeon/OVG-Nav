@@ -587,7 +587,11 @@ class Batch_traj_DataLoader_pano_goalscore():
                 node_info_features[i] = torch.cat([nodes[i].visited,
                                                    node_pose[i]], dim=0)
 
-        adj_mtx = torch.Tensor(graph_data.adj_mtx) + torch.eye(graph_size)
+        adj_mtx = graph_data.adj_mtx
+        mask = adj_mtx > 0
+        adj_mtx[mask] = 1 / (1 + np.exp(-1 / adj_mtx[mask]))
+
+        adj_mtx = torch.Tensor(adj_mtx) + torch.eye(graph_size)
 
 
         return {
