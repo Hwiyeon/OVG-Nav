@@ -22,8 +22,8 @@ parser.add_argument("--max_step", type=int, default=500)
 parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=0)
-parser.add_argument("--data_split_max", type=int, default=11)
-parser.add_argument("--save_dir", type=str, default="/disk4/hwing/Dataset/cm_graph/{}/0704/21cat_relative_pose_step_by_step_pano_edge1.0_v2")
+parser.add_argument("--data_split_max", type=int, default=23)
+parser.add_argument("--save_dir", type=str, default="/disk4/hwing/Dataset/cm_graph/{}/0711/21cat_relative_pose_step_by_step_front_edge1.0_test")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -33,8 +33,8 @@ parser.add_argument("--use_oracle", type=bool, default=True)
 parser.add_argument("--random_crop_data", type=bool, default=False)
 
 ## observation configs ##
-parser.add_argument("--front_width", type=int, default=320)
-parser.add_argument("--front_height", type=int, default=240)
+parser.add_argument("--front_width", type=int, default=640)
+parser.add_argument("--front_height", type=int, default=480)
 parser.add_argument("--front_hfov", type=int, default=70)
 
 parser.add_argument("--add_panoramic_sensor", type=bool, default=True)
@@ -54,7 +54,7 @@ parser.add_argument("--max_frames", type=int, default=500)
 parser.add_argument("--sensing_range", type=float, default=5.0)
 parser.add_argument("--move_forward", type=float, default=0.25)
 parser.add_argument("--edge_range", type=float, default=1.0)
-parser.add_argument("--last_mile_range", type=float, default=3.0)
+parser.add_argument("--last_mile_range", type=float, default=5.0)
 parser.add_argument("--act_rot", type=int, default=30)
 parser.add_argument("--cand_rot", type=int, default=30)
 
@@ -106,7 +106,7 @@ import _pickle as cPickle
 
 from navigation.configs.settings_pano_navi import make_settings
 # import data_collect_runner as runner
-import data_collect_runner_step_by_step_depth_21 as runner
+import data_collect_runner_step_by_step_depth_21_front_obs as runner
 from utils.obj_category_info import gibson_goal_obj_names, mp3d_goal_obj_names, obj_names
 
 

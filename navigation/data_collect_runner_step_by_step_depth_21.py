@@ -1654,8 +1654,8 @@ class Runner:
                     epi_length_num_sample[length_idx] += 1
 
 
-                if np.min(goal_nums_sample[np.nonzero(goal_nums_sample)] / goal_nums[np.nonzero(goal_nums)]) > 1 / interval * 2 / 3 and \
-                    np.min(epi_length_num_sample[np.nonzero(epi_length_num_sample)] / epi_length_num[np.nonzero(epi_length_num)]) > 1 / interval * 2 / 3:
+                if np.min(goal_nums_sample[np.nonzero(goal_nums)] / goal_nums[np.nonzero(goal_nums)]) > 1 / interval * 2 / 3 and \
+                    np.min(epi_length_num_sample[np.nonzero(epi_length_num)] / epi_length_num[np.nonzero(epi_length_num)]) > 1 / interval * 2 / 3:
                     valid_traj_list = temp_valid_traj_list
                     break
 
