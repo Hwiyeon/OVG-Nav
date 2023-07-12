@@ -37,7 +37,7 @@ parser.add_argument("--front_width", type=int, default=640)
 parser.add_argument("--front_height", type=int, default=480)
 parser.add_argument("--front_hfov", type=int, default=70)
 
-parser.add_argument("--add_panoramic_sensor", type=bool, default=True)
+parser.add_argument("--add_panoramic_sensor", type=bool, default=False)
 parser.add_argument("--panoramic_turn_angle", type=int, default=90)
 parser.add_argument("--width", type=int, default=128)
 parser.add_argument("--height", type=int, default=128)
@@ -64,8 +64,7 @@ parser.add_argument('--noisy_rgb', type=bool, default=False, help='use Gaussian 
 parser.add_argument('--noisy_rgb_multiplier', type=float, default=0.1, help='use Gaussian noise on RGB')
 parser.add_argument('--noisy_depth', type=bool, default=False, help='use RedwoodDepthNoiseModel')
 parser.add_argument('--noisy_depth_multiplier', type=float, default=5., help='use RedwoodDepthNoiseModel noise multiplier')
-parser.add_argument("--noise_dir", type=str, default="navigation/noise_models")
-parser.add_argument('--noisy_action', type=bool, default=False, help='')
+parser.add_argument('--noisy_action', type=bool, default=True, help='')
 parser.add_argument('--noisy_pose', type=bool, default=False, help='')
 
 ## local navigation configs ##
