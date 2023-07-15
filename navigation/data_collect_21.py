@@ -23,12 +23,12 @@ parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=0)
 parser.add_argument("--data_split_max", type=int, default=23)
-parser.add_argument("--save_dir", type=str, default="/disk4/hwing/Dataset/cm_graph/{}/0711/21cat_relative_pose_step_by_step_front_edge1.0_test")
+parser.add_argument("--save_dir", type=str, default="/disk4/hwing/Dataset/cm_graph/{}/0715/21cat_relative_pose_step_by_step_pano_connect")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
 parser.add_argument("--floorplan_data_dir", type=str, default='/home/hwing/Dataset/habitat/data/floorplans')
-parser.add_argument("--vis_floorplan", type=bool, default=False)
+parser.add_argument("--vis_floorplan", type=bool, default=True)
 parser.add_argument("--use_oracle", type=bool, default=True)
 parser.add_argument("--random_crop_data", type=bool, default=False)
 
@@ -39,11 +39,11 @@ parser.add_argument("--front_hfov", type=int, default=70)
 
 parser.add_argument("--add_panoramic_sensor", type=bool, default=True)
 parser.add_argument("--panoramic_turn_angle", type=int, default=90)
-parser.add_argument("--width", type=int, default=128)
-parser.add_argument("--height", type=int, default=128)
+parser.add_argument("--width", type=int, default=256)
+parser.add_argument("--height", type=int, default=256)
 parser.add_argument("--hfov", type=int, default=90)
-parser.add_argument("--pano_width", type=int, default=512)
-parser.add_argument("--pano_height", type=int, default=128)
+parser.add_argument("--pano_width", type=int, default=1024)
+parser.add_argument("--pano_height", type=int, default=256)
 parser.add_argument("--sensor_height", type=float, default=0.88)
 
 parser.add_argument("--semantic_sensor", type=bool, default=False)
@@ -74,7 +74,7 @@ parser.add_argument("--map_resolution", type=int, default=5)
 
 ## model configs ##
 parser.add_argument("--detection_model", type=str, default="/home/hwing/Projects/OVG-Nav/modules/detector")
-parser.add_argument("--free_space_model", type=str, default="/home/hwing/Projects/OVG-Nav/modules/free_space_model/ckpts/split_lr0.001_0227_range_2.0/best_model_1.pth")
+parser.add_argument("--free_space_model", type=str, default="/home/hwing/Projects/OVG-Nav/modules/free_space_model/ckpts/split_lr0.001_0227_range_1.0/best_model_1.pth")
 parser.add_argument("--CLIP_model", type=str, default="ViT-B/32")
 parser.add_argument("--COMET_model", type=str, default="/home/hwing/Projects/OVG-Nav/modules/comet_relation/comet-atomic_2020_BART")
 
@@ -106,7 +106,7 @@ import _pickle as cPickle
 
 from navigation.configs.settings_pano_navi import make_settings
 # import data_collect_runner as runner
-import data_collect_runner_step_by_step_depth_21_front_obs as runner
+import data_collect_runner_step_by_step_depth_21 as runner
 from utils.obj_category_info import gibson_goal_obj_names, mp3d_goal_obj_names, obj_names
 
 

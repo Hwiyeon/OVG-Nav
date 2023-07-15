@@ -27,12 +27,12 @@ parser.add_argument('--gamma', type=float, default=0.1, help="learning rate deca
 parser.add_argument('--beta', type=float, default=0.01, help="weight for summary length penalty term (default: 0.01)")
 
 # Misc
-parser.add_argument('--seed', type=int, default=1, help="random seed (default: 1)")
+parser.add_argument('--seed', type=int, default=100, help="random seed (default: 1)")
 parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0711/21cat_relative_pose_step_by_step_front_edge1.0', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0711/21cat_relative_pose_step_by_step_front_edge1.0_v2', type=str)
 # parser.add_argument('--data-dir', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cm', type=str)
 # parser.add_argument('--data-dir_aug', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cmv2', type=str)
 # parser.add_argument('--data-dir_aug', default=[
@@ -44,7 +44,7 @@ parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/07
 parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_0712/0712_mp3d21_front_goalscore_adjloss0.5_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--log_dir', default='logs/cm_0712/0712_mp3d21_frontv2_goalscore_adjloss0.5_{}_maxdist{}_lr{}_seed100', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_front', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
@@ -414,7 +414,7 @@ def main():
                     rank_acc_1 = float(torch.Tensor([1]))
                 else:
                     rank_acc_3 = float(torch.argmax(pred_dist[cand_nodes > 0], dim=0) in topk_list)
-                    rank_acc_1 = float(torch.argmax(pred_dist[cand_nodes > 0], dim=0) in topk_list[:,0])
+                    rank_acc_1 = float(torch.argmax(pred_dist[cand_nodes > 0], dim=0) in topk_list[0])
 
                 pred_diff = np.linalg.norm(
                     data['node_pose'][torch.argmax(pred_dist)] - data['node_pose'][torch.argmax(node_goal_dists)])
@@ -682,8 +682,8 @@ def eval(checkpoint_path):
             cand_nodes = 1 - info_features[:, 0]
             if torch.sum(cand_nodes) == 0:
                 topk_list = None
-            elif torch.sum(cand_nodes) >= 1:
-                topk_list = torch.topk(node_goal_dists[cand_nodes > 0], 1, dim=0).indices
+            elif torch.sum(cand_nodes) >= 3:
+                topk_list = torch.topk(node_goal_dists[cand_nodes > 0], 3, dim=0).indices
             else:
                 topk_list = torch.topk(node_goal_dists[cand_nodes > 0], int(torch.sum(1 - info_features[:, 0])),
                                        dim=0).indices
@@ -693,7 +693,7 @@ def eval(checkpoint_path):
                 rank_acc_1 = float(torch.Tensor([1]))
             else:
                 rank_acc_3 = float(torch.argmax(pred_dist[cand_nodes > 0], dim=0) in topk_list)
-                rank_acc_1 = float(torch.argmax(pred_dist[cand_nodes > 0], dim=0) in topk_list[:, 0])
+                rank_acc_1 = float(torch.argmax(pred_dist[cand_nodes > 0], dim=0) in topk_list[0])
             pred_diff = np.linalg.norm(data['node_pose'][torch.argmax(pred_dist)] - data['node_pose'][torch.argmax(node_goal_dists)])
 
             disp_value_acc += value_acc
@@ -753,3 +753,4 @@ if __name__ == '__main__':
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0616/0616_combv2_modelv2_1_use_cm_maxdist30.0_lr0.0001/model_20.pth')
     # eval('/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0701/0701_relpose_stepbystep_pano_goalscore_use_cm_maxdist30.0_lr0.01/model_20.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0706/0706_mp3d21_pano_goalscore_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
+    # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0712/0712_mp3d21_front_goalscore_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')

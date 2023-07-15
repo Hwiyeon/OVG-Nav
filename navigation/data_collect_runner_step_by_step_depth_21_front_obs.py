@@ -452,15 +452,15 @@ class Runner:
         node_list = list(graph_map.node_by_id.values())
 
         for edge in list(graph_map.edges):
-            if not edge.draw:
-                pos1 = np.array(edge.nodes[0].pos) if edge.nodes[0].vis_pos is None else np.array(edge.nodes[0].vis_pos)
-                pos2 = np.array(edge.nodes[1].pos) if edge.nodes[1].vis_pos is None else np.array(edge.nodes[1].vis_pos)
-                node_grid1 = self.get_vis_grid_pose(pos1 + bias_position, self.curr_level)
-                node_grid2 = self.get_vis_grid_pose(pos2 + bias_position, self.curr_level)
-                # node_grid1 = self.get_vis_grid_pose(np.array(edge.nodes[0].pos) + bias_position, self.curr_level)
-                # node_grid2 = self.get_vis_grid_pose(np.array(edge.nodes[1].pos) + bias_position, self.curr_level)
-                vis_map = cv2.line(vis_map, node_grid1, node_grid2, (0, 64, 64), 5)
-                edge.draw = True
+            # if not edge.draw:
+            pos1 = np.array(edge.nodes[0].pos) if edge.nodes[0].vis_pos is None else np.array(edge.nodes[0].vis_pos)
+            pos2 = np.array(edge.nodes[1].pos) if edge.nodes[1].vis_pos is None else np.array(edge.nodes[1].vis_pos)
+            node_grid1 = self.get_vis_grid_pose(pos1 + bias_position, self.curr_level)
+            node_grid2 = self.get_vis_grid_pose(pos2 + bias_position, self.curr_level)
+            # node_grid1 = self.get_vis_grid_pose(np.array(edge.nodes[0].pos) + bias_position, self.curr_level)
+            # node_grid2 = self.get_vis_grid_pose(np.array(edge.nodes[1].pos) + bias_position, self.curr_level)
+            vis_map = cv2.line(vis_map, node_grid1, node_grid2, (0, 64, 64), 5)
+            edge.draw = True
 
         # cm_scores = []
         # for node in node_list:
@@ -665,8 +665,8 @@ class Runner:
                                       bias_position=None, curr_position=None, curr_goal_position=None,
                                       vis_goal_obj_score=None, vis_obj=None,
                                       visited_positions=None):
-        # vis_map = self.map.copy()
-        vis_map = self.cur_graph_map
+        vis_map = vis_map = self.goal_map[self.curr_level][self.goal_obj_names[self.goal_class_idx]].copy()
+        # vis_map = self.cur_graph_map
         # if vis_obj is not None:
         #     vis_map = self.vis_topdown_obj_map(vis_map, vis_obj)
 
@@ -1282,32 +1282,28 @@ class Runner:
         # except habitat_sim.errors.GreedyFollowerError:
 
 
-        try:
-            path = self.follower.find_path(self.goal_info['best_viewpoint_position'])
-        except habitat_sim.errors.GreedyFollowerError:
-            for view_point in self.goal_info['view_points']:
-                try:
-                    path = self.follower.find_path(view_point)
-                    break
-                except habitat_sim.errors.GreedyFollowerError:
-                    continue
+        # try:
+        #     path = self.follower.find_path(self.goal_info['best_viewpoint_position'])
+        # except habitat_sim.errors.GreedyFollowerError:
+        #     for view_point in self.goal_info['view_points']:
+        #         try:
+        #             path = self.follower.find_path(view_point)
+        #             break
+        #         except habitat_sim.errors.GreedyFollowerError:
+        #             continue
 
 
 
-        # path = []
-        # for act in self.goal_info['shortest_path']:
-        #     if act == 1:
-        #         path.append('move_forward')
-        #     elif act == 2:
-        #         path.append('turn_left')
-        #         path.append('turn_left')
-        #         path.append('turn_left')
-        #     elif act == 3:
-        #         path.append('turn_right')
-        #         path.append('turn_right')
-        #         path.append('turn_right')
-        #     else:
-        #         path.append(None)
+        path = []
+        for act in self.goal_info['shortest_path']:
+            if act == 1:
+                path.append('move_forward')
+            elif act == 2:
+                path.append('turn_left')
+            elif act == 3:
+                path.append('turn_right')
+            else:
+                path.append(None)
 
         if self.vis_floorplan:
             vis_graph_map = self.vis_topdown_map_with_captions(self.graph_map, curr_node=self.cur_node, bias_position=self.abs_init_position)
@@ -1362,7 +1358,9 @@ class Runner:
                 arrive_node = True
                 # self.cur_node = self.graph_map.add_single_node(curr_position)
                 nearest_node_idx, nearest_node_dist = self.graph_map.get_nearest_node(curr_position)
+                prev_node = self.cur_node
                 self.cur_node = self.graph_map.node_by_id[nearest_node_idx]
+                self.graph_map.add_edge(prev_node, self.cur_node)
 
                 curr_obs = self._sim.get_sensor_observations()
                 splited_imgs = [
@@ -1407,13 +1405,39 @@ class Runner:
                     self.save_step(data_idx, step_idx)
                     step_idx += 1
 
+                if self.vis_floorplan:
+                    vis_graph_map = self.vis_topdown_map_with_captions(self.graph_map, curr_node=self.cur_node, bias_position=self.abs_init_position)
+
             elif arrive_node:
+                curr_state = self._sim.agents[0].get_state()
+                splited_imgs = [
+                    self.rgb_list[-1][:, :int(self.vo_width / 2), :3],
+                    self.rgb_list[-1][:, int(self.vo_width / 4):int(self.vo_width * 3 / 4), :3],
+                    self.rgb_list[-1][:, int(self.vo_width / 2):, :3]
+                ]
+                splited_img_feat = self.common_sense_model.clip.get_image_feat(splited_imgs)
+                cur_heading_idx = int(np.round(-curr_rotation[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
+                for i in range(len(splited_imgs)):
+                    dirc_head_idx = (cur_heading_idx - 1 + i) % self.rot_num
+                    self.graph_map.update_node_clip_feat(self.cur_node, splited_img_feat[i], dirc_head_idx)
+                goal_cm_scores, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat,
+                                                                             self.cur_node.clip_feat, feat=True,
+                                                                             return_only_max=False)
+                cand_cm_scores, _ = self.common_sense_model.text_image_score(self.cand_place_text_feat,
+                                                                             self.cur_node.clip_feat, feat=True,
+                                                                             return_only_max=False)
+                cm_info = {
+                    'goal_cm_scores': goal_cm_scores,
+                    'cand_cm_scores': cand_cm_scores,
+                }
+                self.cur_node.goal_cm_info = cm_info
+
                 cand_nodes = self.get_cand_node_dirc(self.rgb_list[-1], self.depth_list[-1], curr_position, curr_rotation, np.array(curr_state.position)- np.array(self.abs_init_position))
                 update_garph = self.update_cand_node_to_graph(self.cur_node, cand_nodes)
 
-                if update_garph and len(self.graph_map.candidate_node_ids) > 3:
-                    self.save_step(data_idx, step_idx)
-                    step_idx += 1
+                # if update_garph and len(self.graph_map.candidate_node_ids) > 3:
+                #     self.save_step(data_idx, step_idx)
+                #     step_idx += 1
 
 
 
@@ -1426,9 +1450,11 @@ class Runner:
                                                      np.array(curr_state.position) - np.array(self.abs_init_position))
                 cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
                 update_garph = self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes)
-                if update_garph and len(self.graph_map.candidate_node_ids) > 3:
-                    self.save_step(data_idx, step_idx)
-                    step_idx += 1
+                # if update_garph and len(self.graph_map.candidate_node_ids) > 3:
+                #     self.save_step(data_idx, step_idx)
+                #     step_idx += 1
+                if self.vis_floorplan:
+                    vis_graph_map = self.vis_topdown_map_with_captions(self.graph_map, curr_node=self.cur_node, bias_position=self.abs_init_position)
 
 
         return
@@ -1589,7 +1615,7 @@ class Runner:
                 epi_length_num[length_idx] += 1
 
 
-            interval = 200
+            interval = 100
 
             while True:
                 epi_length_num_sample = np.zeros([3])

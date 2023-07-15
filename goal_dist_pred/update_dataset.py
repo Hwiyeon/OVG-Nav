@@ -32,7 +32,7 @@ parser.add_argument('--seed', type=int, default=1, help="random seed (default: 1
 parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0711/21cat_relative_pose_step_by_step_front_edge1.0', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0711/21cat_relative_pose_step_by_step_front_edge1.0_v2', type=str)
 parser.add_argument('--log_dir', default='logs/cm_0607/0607_{}_lr{}_test', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
@@ -152,6 +152,11 @@ def main_0():
     #             node_pano_vis_feat[torch.isnan(node_pano_vis_feat)] = 0.0  ## maskout nan
     #             graph_data.node_by_id[nodeid].pano_vis_feat = node_pano_vis_feat
     #
+    #             weighted_adj_mtx = np.copy(graph_data.adj_mtx)
+    #             mask = weighted_adj_mtx > 0
+    #             weighted_adj_mtx[mask] = 1 / (1 + np.exp(-1 / weighted_adj_mtx[mask]))
+    #             graph_data.weighted_adj_mtx = weighted_adj_mtx
+    #
     #
     #             # node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5])
     #             # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
@@ -229,6 +234,11 @@ def main_0():
                 node_pano_vis_feat = nodes[i].clip_feat
                 node_pano_vis_feat[torch.isnan(node_pano_vis_feat)] = 0.0  ## maskout nan
                 graph_data.node_by_id[nodeid].pano_vis_feat = node_pano_vis_feat
+
+                weighted_adj_mtx = np.copy(graph_data.adj_mtx)
+                mask = weighted_adj_mtx > 0
+                weighted_adj_mtx[mask] = 1 / (1 + np.exp(-1 / weighted_adj_mtx[mask]))
+                graph_data.weighted_adj_mtx = weighted_adj_mtx
 
 
                 # node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5])

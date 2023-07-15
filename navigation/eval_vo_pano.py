@@ -12,7 +12,7 @@ import argparse
 parser = argparse.ArgumentParser()
 
 ## eval configs ##
-parser.add_argument("--gpu_list", type=str, default="9")
+parser.add_argument("--gpu_list", type=str, default="7")
 parser.add_argument("--model_gpu", type=str, default="0")
 parser.add_argument("--sim_gpu", type=str, default="0")
 # parser.add_argument("--data", type=str, default="gibosn")
@@ -65,7 +65,7 @@ parser.add_argument('--noisy_rgb_multiplier', type=float, default=0.1, help='use
 parser.add_argument('--noisy_depth', type=bool, default=False, help='use RedwoodDepthNoiseModel')
 parser.add_argument('--noisy_depth_multiplier', type=float, default=5., help='use RedwoodDepthNoiseModel noise multiplier')
 parser.add_argument("--noise_dir", type=str, default="navigation/noise_models")
-parser.add_argument('--noisy_action', type=bool, default=True, help='')
+parser.add_argument('--noisy_action', type=bool, default=False, help='')
 parser.add_argument('--noisy_pose', type=bool, default=False, help='')
 
 ## local navigation configs ##
