@@ -8,7 +8,7 @@ import argparse
 
 parser = argparse.ArgumentParser("Pytorch code for unsupervised video summarization with REINFORCE")
 
-
+parser.add_argument("--run_type", type=str, default="train")
 parser.add_argument("--data_split", type=int, default=9)
 parser.add_argument("--data_split_max", type=int, default=10)
 
@@ -32,7 +32,7 @@ parser.add_argument('--seed', type=int, default=1, help="random seed (default: 1
 parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0711/21cat_relative_pose_step_by_step_front_edge1.0_v2', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
 parser.add_argument('--log_dir', default='logs/cm_0607/0607_{}_lr{}_test', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
@@ -124,158 +124,173 @@ def main_0():
 
     # ## -- check invalid data -- ##
     invalid_list = []
-    # for data in tqdm(val_list, total=len(val_list)):
-    #     try:
-    #         with open(f'{data}/graph.pkl', 'rb') as f:
-    #             graph_data = pickle.load(f)
-    #
-    #         ## pre compute pano scores
-    #         nodes = [graph_data.node_by_id[id] for id in graph_data.node_by_id.keys()]
-    #
-    #         cand_weight = torch.Tensor(graph_data.goal_cm_info['cand_category_room_score'][:5])
-    #
-    #         for i in range(len(nodes)):
-    #             nodeid = nodes[i].nodeid
-    #
-    #             node_goal_cm_scores = torch.Tensor(nodes[i].goal_cm_info['goal_cm_scores']) * 0.01
-    #             # node_goal_cm_scores = torch.softmax(node_goal_cm_scores, dim=1)
-    #             node_goal_cm_scores[torch.isnan(node_goal_cm_scores)] = 0.0  ## maskout nan
-    #             graph_data.node_by_id[nodeid].goal_cm_scores = node_goal_cm_scores
-    #
-    #             node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5]) * 0.01
-    #             # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
-    #             #                                         dim=1) * cand_weight  ## weighted by room category
-    #             node_cand_cm_scores[torch.isnan(node_cand_cm_scores)] = 0.0  ## maskout nan
-    #             graph_data.node_by_id[nodeid].cand_cm_scores = node_cand_cm_scores
-    #
-    #             node_pano_vis_feat = nodes[i].clip_feat
-    #             node_pano_vis_feat[torch.isnan(node_pano_vis_feat)] = 0.0  ## maskout nan
-    #             graph_data.node_by_id[nodeid].pano_vis_feat = node_pano_vis_feat
-    #
-    #             weighted_adj_mtx = np.copy(graph_data.adj_mtx)
-    #             mask = weighted_adj_mtx > 0
-    #             weighted_adj_mtx[mask] = 1 / (1 + np.exp(-1 / weighted_adj_mtx[mask]))
-    #             graph_data.weighted_adj_mtx = weighted_adj_mtx
-    #
-    #
-    #             # node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5])
-    #             # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
-    #             #                                         dim=1) * cand_weight  ## weighted by room category
-    #             # weighted_cand_cm_scores[torch.isnan(weighted_cand_cm_scores)] = 0.0  ## maskout nan
-    #             # graph_data.node_by_id[nodeid].weighted_cand_cm_scores = weighted_cand_cm_scores
-    #             #
-    #             #
-    #
-    #
-    #
-    #         # goal_class_idx = torch.where(graph_data.node_by_id['0'].goal_cat == 1)[0]
-    #         # if len(graph_data.goal_text_clip_feat) == 6:
-    #         #     graph_data.goal_text_clip_feat = graph_data.goal_text_clip_feat[goal_class_idx]
-    #         # goal_feat = goal_text_clip_feat[goal_class_idx]
-    #         # graph_data.goal_class_idx = goal_class_idx
-    #         # graph_data.goal_text_clip_feat = goal_feat
-    #         # for idx in graph_data.node_by_id.keys():
-    #         #     graph_data.node_by_id[idx].goal_cm_info['goal_place_feat'] = graph_data.node_by_id[idx].goal_cm_info[
-    #         #         'goal_place_feat'].cpu()
-    #
-    #         # adj_mtx_vec = np.zeros([len(graph_data.nodes), len(graph_data.nodes), 3])
-    #         # for edge in graph_data.edge_ids:
-    #         #     p0 = np.array(graph_data.node_by_id[edge[0]].pos)
-    #         #     p1 = np.array(graph_data.node_by_id[edge[1]].pos)
-    #         #     adj_mtx_vec[int(edge[0]), int(edge[1])] = p1 - p0
-    #         # graph_data.adj_mtx_vec = adj_mtx_vec
-    #         with open(f'{data}/graph.pkl', 'wb') as f:
-    #             pickle.dump(graph_data, f)
-    #
-    #     except KeyboardInterrupt:
-    #         print("KeyboardInterrupt")
-    #         break
-    #     except:
-    #         print(data)
-    #         invalid_list.append(data)
+    if args.run_type == 'val':
+        for data in tqdm(val_list, total=len(val_list)):
+            try:
+                with open(f'{data}/graph.pkl', 'rb') as f:
+                    graph_data = pickle.load(f)
 
-    for data in tqdm(train_list, total=len(train_list)):
-        try:
-            with open(f'{data}/graph.pkl', 'rb') as f:
-                graph_data = pickle.load(f)
+                ## pre compute pano scores
+                nodes = [graph_data.node_by_id[id] for id in graph_data.node_by_id.keys()]
 
-            ## pre compute pano scores
-            nodes = [graph_data.node_by_id[id] for id in graph_data.node_by_id.keys()]
+                cand_weight = torch.Tensor(graph_data.goal_cm_info['cand_category_room_score'][:5])
 
-            cand_weight = torch.Tensor(graph_data.goal_cm_info['cand_category_room_score'][:5])
+                for i in range(len(nodes)):
+                    nodeid = nodes[i].nodeid
 
-            max_goal_val, max_cand_val = -1, -1
-            min_goal_val, min_cand_val = 1, 1
+                    node_goal_cm_scores = torch.Tensor(nodes[i].goal_cm_info['goal_cm_scores']) * 0.01
+                    # node_goal_cm_scores = torch.softmax(node_goal_cm_scores, dim=1)
+                    node_goal_cm_scores[torch.isnan(node_goal_cm_scores)] = 0.0  ## maskout nan
+                    graph_data.node_by_id[nodeid].goal_cm_scores = node_goal_cm_scores
 
-            for i in range(len(nodes)):
-                nodeid = nodes[i].nodeid
+                    node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5]) * 0.01
+                    # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
+                    #                                         dim=1) * cand_weight  ## weighted by room category
+                    node_cand_cm_scores[torch.isnan(node_cand_cm_scores)] = 0.0  ## maskout nan
+                    graph_data.node_by_id[nodeid].cand_cm_scores = node_cand_cm_scores
 
-                node_goal_cm_scores = torch.Tensor(nodes[i].goal_cm_info['goal_cm_scores']) * 0.01
-                # node_goal_cm_scores = torch.softmax(node_goal_cm_scores, dim=1)
-                node_goal_cm_scores[torch.isnan(node_goal_cm_scores)] = 0.0  ## maskout nan
-                graph_data.node_by_id[nodeid].goal_cm_scores = node_goal_cm_scores
+                    node_pano_vis_feat = nodes[i].clip_feat
+                    node_pano_vis_feat[torch.isnan(node_pano_vis_feat)] = 0.0  ## maskout nan
+                    graph_data.node_by_id[nodeid].pano_vis_feat = node_pano_vis_feat
 
-                node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5]) * 0.01
-                # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
-                #                                         dim=1) * cand_weight  ## weighted by room category
-                node_cand_cm_scores[torch.isnan(node_cand_cm_scores)] = 0.0  ## maskout nan
-                graph_data.node_by_id[nodeid].cand_cm_scores = node_cand_cm_scores
+                    adj_mtx = np.copy(graph_data.adj_mtx)
+                    mask = adj_mtx > 0
+                    weighted_adj_mtx = np.copy(adj_mtx)
+                    weighted_adj_mtx[mask] = 1 / (1 + np.exp(-1 / weighted_adj_mtx[mask]))
+                    graph_data.weighted_adj_mtx = weighted_adj_mtx
+
+                    connection_adj_mtx = np.copy(adj_mtx)
+                    connection_adj_mtx[mask] = 1
+                    graph_data.connection_adj_mtx = connection_adj_mtx
+
+                    # adj_mtx = graph_data.adj_mtx
+                    # mask = adj_mtx > 0
+                    # adj_mtx[mask] = 1
 
 
-                if max_goal_val < torch.max(node_goal_cm_scores):
-                    max_goal_val = torch.max(node_goal_cm_scores)
-                if min_goal_val > torch.min(node_goal_cm_scores) and torch.min(node_goal_cm_scores) != 0.0:
-                    min_goal_val = torch.min(node_goal_cm_scores)
-                if max_cand_val < torch.max(node_cand_cm_scores):
-                    max_cand_val = torch.max(node_cand_cm_scores)
-                if min_cand_val > torch.min(node_cand_cm_scores) and torch.min(node_cand_cm_scores) != 0.0:
-                    min_cand_val = torch.min(node_cand_cm_scores)
-
-                node_pano_vis_feat = nodes[i].clip_feat
-                node_pano_vis_feat[torch.isnan(node_pano_vis_feat)] = 0.0  ## maskout nan
-                graph_data.node_by_id[nodeid].pano_vis_feat = node_pano_vis_feat
-
-                weighted_adj_mtx = np.copy(graph_data.adj_mtx)
-                mask = weighted_adj_mtx > 0
-                weighted_adj_mtx[mask] = 1 / (1 + np.exp(-1 / weighted_adj_mtx[mask]))
-                graph_data.weighted_adj_mtx = weighted_adj_mtx
+                    # node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5])
+                    # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
+                    #                                         dim=1) * cand_weight  ## weighted by room category
+                    # weighted_cand_cm_scores[torch.isnan(weighted_cand_cm_scores)] = 0.0  ## maskout nan
+                    # graph_data.node_by_id[nodeid].weighted_cand_cm_scores = weighted_cand_cm_scores
+                    #
+                    #
 
 
-                # node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5])
-                # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
-                #                                         dim=1) * cand_weight  ## weighted by room category
-                # weighted_cand_cm_scores[torch.isnan(weighted_cand_cm_scores)] = 0.0  ## maskout nan
-                # graph_data.node_by_id[nodeid].weighted_cand_cm_scores = weighted_cand_cm_scores
+
+                # goal_class_idx = torch.where(graph_data.node_by_id['0'].goal_cat == 1)[0]
+                # if len(graph_data.goal_text_clip_feat) == 6:
+                #     graph_data.goal_text_clip_feat = graph_data.goal_text_clip_feat[goal_class_idx]
+                # goal_feat = goal_text_clip_feat[goal_class_idx]
+                # graph_data.goal_class_idx = goal_class_idx
+                # graph_data.goal_text_clip_feat = goal_feat
+                # for idx in graph_data.node_by_id.keys():
+                #     graph_data.node_by_id[idx].goal_cm_info['goal_place_feat'] = graph_data.node_by_id[idx].goal_cm_info[
+                #         'goal_place_feat'].cpu()
+
+                # adj_mtx_vec = np.zeros([len(graph_data.nodes), len(graph_data.nodes), 3])
+                # for edge in graph_data.edge_ids:
+                #     p0 = np.array(graph_data.node_by_id[edge[0]].pos)
+                #     p1 = np.array(graph_data.node_by_id[edge[1]].pos)
+                #     adj_mtx_vec[int(edge[0]), int(edge[1])] = p1 - p0
+                # graph_data.adj_mtx_vec = adj_mtx_vec
+                with open(f'{data}/graph.pkl', 'wb') as f:
+                    pickle.dump(graph_data, f)
+
+            except KeyboardInterrupt:
+                print("KeyboardInterrupt")
+                break
+            except:
+                print(data)
+                invalid_list.append(data)
+    elif args.run_type == 'train':
+        for data in tqdm(train_list, total=len(train_list)):
+            try:
+                with open(f'{data}/graph.pkl', 'rb') as f:
+                    graph_data = pickle.load(f)
+
+                ## pre compute pano scores
+                nodes = [graph_data.node_by_id[id] for id in graph_data.node_by_id.keys()]
+
+                cand_weight = torch.Tensor(graph_data.goal_cm_info['cand_category_room_score'][:5])
+
+                max_goal_val, max_cand_val = -1, -1
+                min_goal_val, min_cand_val = 1, 1
+
+                for i in range(len(nodes)):
+                    nodeid = nodes[i].nodeid
+
+                    node_goal_cm_scores = torch.Tensor(nodes[i].goal_cm_info['goal_cm_scores']) * 0.01
+                    # node_goal_cm_scores = torch.softmax(node_goal_cm_scores, dim=1)
+                    node_goal_cm_scores[torch.isnan(node_goal_cm_scores)] = 0.0  ## maskout nan
+                    graph_data.node_by_id[nodeid].goal_cm_scores = node_goal_cm_scores
+
+                    node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5]) * 0.01
+                    # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
+                    #                                         dim=1) * cand_weight  ## weighted by room category
+                    node_cand_cm_scores[torch.isnan(node_cand_cm_scores)] = 0.0  ## maskout nan
+                    graph_data.node_by_id[nodeid].cand_cm_scores = node_cand_cm_scores
+
+
+                    if max_goal_val < torch.max(node_goal_cm_scores):
+                        max_goal_val = torch.max(node_goal_cm_scores)
+                    if min_goal_val > torch.min(node_goal_cm_scores) and torch.min(node_goal_cm_scores) != 0.0:
+                        min_goal_val = torch.min(node_goal_cm_scores)
+                    if max_cand_val < torch.max(node_cand_cm_scores):
+                        max_cand_val = torch.max(node_cand_cm_scores)
+                    if min_cand_val > torch.min(node_cand_cm_scores) and torch.min(node_cand_cm_scores) != 0.0:
+                        min_cand_val = torch.min(node_cand_cm_scores)
+
+                    node_pano_vis_feat = nodes[i].clip_feat
+                    node_pano_vis_feat[torch.isnan(node_pano_vis_feat)] = 0.0  ## maskout nan
+                    graph_data.node_by_id[nodeid].pano_vis_feat = node_pano_vis_feat
+
+                    adj_mtx = np.copy(graph_data.adj_mtx)
+                    mask = adj_mtx > 0
+                    weighted_adj_mtx = np.copy(adj_mtx)
+                    weighted_adj_mtx[mask] = 1 / (1 + np.exp(-1 / weighted_adj_mtx[mask]))
+                    graph_data.weighted_adj_mtx = weighted_adj_mtx
+
+                    connection_adj_mtx = np.copy(adj_mtx)
+                    connection_adj_mtx[mask] = 1
+                    graph_data.connection_adj_mtx = connection_adj_mtx
+
+
+                    # node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5])
+                    # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
+                    #                                         dim=1) * cand_weight  ## weighted by room category
+                    # weighted_cand_cm_scores[torch.isnan(weighted_cand_cm_scores)] = 0.0  ## maskout nan
+                    # graph_data.node_by_id[nodeid].weighted_cand_cm_scores = weighted_cand_cm_scores
+                    #
+
+
+
+                # goal_class_idx = torch.where(graph_data.node_by_id['0'].goal_cat == 1)[0]
+                # if len(graph_data.goal_text_clip_feat) == 6:
+                #     graph_data.goal_text_clip_feat = graph_data.goal_text_clip_feat[goal_class_idx]
+                # goal_feat = goal_text_clip_feat[goal_class_idx]
+                # graph_data.goal_class_idx = goal_class_idx
+                # graph_data.goal_text_clip_feat = goal_feat
+                # # for idx in graph_data.node_by_id.keys():
+                #     graph_data.node_by_id[idx].goal_cm_info['goal_place_feat'] = graph_data.node_by_id[idx].goal_cm_info[
+                #         'goal_place_feat'].cpu()
+
+                # adj_mtx_vec = np.zeros([len(graph_data.nodes), len(graph_data.nodes), 3])
+                # for edge in graph_data.edge_ids:
+                #     p0 = np.array(graph_data.node_by_id[edge[0]].pos)
+                #     p1 = np.array(graph_data.node_by_id[edge[1]].pos)
+                #     adj_mtx_vec[int(edge[0]), int(edge[1])] = p1 - p0
+                # graph_data.adj_mtx_vec = adj_mtx_vec
                 #
-
-
-
-            # goal_class_idx = torch.where(graph_data.node_by_id['0'].goal_cat == 1)[0]
-            # if len(graph_data.goal_text_clip_feat) == 6:
-            #     graph_data.goal_text_clip_feat = graph_data.goal_text_clip_feat[goal_class_idx]
-            # goal_feat = goal_text_clip_feat[goal_class_idx]
-            # graph_data.goal_class_idx = goal_class_idx
-            # graph_data.goal_text_clip_feat = goal_feat
-            # # for idx in graph_data.node_by_id.keys():
-            #     graph_data.node_by_id[idx].goal_cm_info['goal_place_feat'] = graph_data.node_by_id[idx].goal_cm_info[
-            #         'goal_place_feat'].cpu()
-
-            # adj_mtx_vec = np.zeros([len(graph_data.nodes), len(graph_data.nodes), 3])
-            # for edge in graph_data.edge_ids:
-            #     p0 = np.array(graph_data.node_by_id[edge[0]].pos)
-            #     p1 = np.array(graph_data.node_by_id[edge[1]].pos)
-            #     adj_mtx_vec[int(edge[0]), int(edge[1])] = p1 - p0
-            # graph_data.adj_mtx_vec = adj_mtx_vec
-            #
-            with open(f'{data}/graph.pkl', 'wb') as f:
-                pickle.dump(graph_data, f)
-        except KeyboardInterrupt:
-            print("KeyboardInterrupt")
-            break
-        except:
-            print(data)
-            # os.system(f"rm -r {data}")
-            invalid_list.append(data)
+                with open(f'{data}/graph.pkl', 'wb') as f:
+                    pickle.dump(graph_data, f)
+            except KeyboardInterrupt:
+                print("KeyboardInterrupt")
+                break
+            except:
+                print(data)
+                # os.system(f"rm -r {data}")
+                invalid_list.append(data)
 
 def main():
     use_gpu = torch.cuda.is_available()

@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser("Pytorch code for unsupervised video summarizat
 parser.add_argument('--vis_feat_dim', default=512, type=int)
 # parser.add_argument('--goal_type_num', default=6, type=int)
 parser.add_argument('--max_dist', default=30., type=float)
-parser.add_argument('--use_cm_score', default=False, type=bool)
+parser.add_argument('--use_cm_score', default=True, type=bool)
 parser.add_argument('--goal_cat', type=str, default='mp3d_21')
 parser.add_argument('--adj_loss_cf', default=0.5, type=float)
 
@@ -28,12 +28,12 @@ parser.add_argument('--beta', type=float, default=0.01, help="weight for summary
 
 # Misc
 parser.add_argument('--seed', type=int, default=100, help="random seed (default: 1)")
-parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
+parser.add_argument('--gpu', type=str, default='8', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0711/21cat_relative_pose_step_by_step_front_edge1.0_v2', type=str)
-# parser.add_argument('--data-dir', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cm', type=str)
+# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0704/21cat_relative_pose_step_by_step_pano', type=str)
 # parser.add_argument('--data-dir_aug', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cmv2', type=str)
 # parser.add_argument('--data-dir_aug', default=[
 #                                               '/data2/hwing/Dataset/cm_graph/mp3d/0622/no_rot_bias_step_by_step_v2',
@@ -44,8 +44,8 @@ parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/07
 parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_0712/0712_mp3d21_frontv2_goalscore_adjloss0.5_{}_maxdist{}_lr{}_seed100', type=str)
-parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_front', type=str)
+parser.add_argument('--log_dir', default='logs/cm_0716/0716_mp3d21_panov2_goalscore_con_adjmtx_adjloss0.5_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_v4_running_addnode', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
 parser.add_argument('--checkpoints', type=str, default=None)
@@ -652,13 +652,19 @@ def eval(checkpoint_path):
         eyes = torch.eye(100).cuda()
 
         for data in tqdm(valid_loader, total=len(val_list)):
-            cnt_in_val += 1
+
             features = data['node_features'].cuda()
             info_features = data['node_info_features'].cuda()
             goal_features = data['node_goal_features'].cuda()
             adj_mtx = data['adj_mtx'].cuda()
             node_goal_dists = data['node_goal_dists'].cuda()
             goal_idx = data['goal_idx']
+
+            cand_nodes = 1 - info_features[:, 0]
+            if torch.sum(cand_nodes) < 3:
+                continue
+
+            cnt_in_val += 1
 
             pred_dist = model(features, goal_features, info_features, adj_mtx)
             value_loss = criterion(pred_dist, node_goal_dists)
@@ -748,9 +754,10 @@ def eval(checkpoint_path):
 
 if __name__ == '__main__':
 
-    main()
+    # main()
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0610/0610_v2_1_use_cm_maxdist30.0_lr0.001/model_25.pth')
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0616/0616_combv2_modelv2_1_use_cm_maxdist30.0_lr0.0001/model_20.pth')
     # eval('/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0701/0701_relpose_stepbystep_pano_goalscore_use_cm_maxdist30.0_lr0.01/model_20.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0706/0706_mp3d21_pano_goalscore_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0712/0712_mp3d21_front_goalscore_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
+    eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0716/0716_mp3d21_panov2_goalscore_wadjmtx_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')

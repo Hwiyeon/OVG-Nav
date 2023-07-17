@@ -22,7 +22,7 @@ class LocalAgent(object):
     ):
         self.args = args
         self.actuation_noise = args.noisy_action
-        self.pose_noise = args.noisy_pose
+        # self.pose_noise = args.noisy_pose
         self.noisy_sensor = None
         # if self.actuation_noise or self.pose_noise:
         #     self.noisy_sensor = NoisySensor(args, noise_level=1.0)

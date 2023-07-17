@@ -22,7 +22,7 @@ parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=0)
 parser.add_argument("--data_split_max", type=int, default=11)
-parser.add_argument("--save_dir", type=str, default="/home/hwing/Dataset/cm_graph/{}/{}/0707_21/actrot30_1obs_pano_cometscore_adj0.5")
+parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/0717_21/actrot30_1obs_pano_cometscore_adj0.5_wadj_connected")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -66,7 +66,8 @@ parser.add_argument('--noisy_depth', type=bool, default=False, help='use Redwood
 parser.add_argument('--noisy_depth_multiplier', type=float, default=5., help='use RedwoodDepthNoiseModel noise multiplier')
 parser.add_argument("--noise_dir", type=str, default="navigation/noise_models")
 parser.add_argument('--noisy_action', type=bool, default=False, help='')
-parser.add_argument('--noisy_pose', type=bool, default=False, help='')
+parser.add_argument('--noisy_action_multiplier', type=float, default=0.05)
+
 
 ## local navigation configs ##
 parser.add_argument("--map_size_cm", type=int, default=1200)
@@ -82,7 +83,7 @@ parser.add_argument("--COMET_model", type=str, default="/home/hwing/Projects/OVG
 
 # parser.add_argument("--value_model", type=str, default='/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0610/0610_v2_1_use_cm_maxdist30.0_lr0.001/model_25.pth')
 # parser.add_argument("--value_model", type=str, default='/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0616/0616_combv2_modelv2_1_use_cm_maxdist30.0_lr0.0001/model_20.pth')
-parser.add_argument("--value_model", type=str, default='/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0706/0706_mp3d21_pano_goalscore_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
+parser.add_argument("--value_model", type=str, default='/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0716/0716_mp3d21_panov2_goalscore_wadjmtx_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
 parser.add_argument('--vis_feat_dim', default=512, type=int)
 parser.add_argument('--use_cm_score', default=True, type=bool)
 

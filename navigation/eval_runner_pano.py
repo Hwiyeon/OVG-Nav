@@ -175,7 +175,7 @@ class Runner:
             self.detector = SemanticPredRedNet(args)
         self.free_space_model = FreeSpaceModel(args)
         self.common_sense_model = CommonSenseModel(args)
-        self.noisy_pose = args.noisy_pose
+        # self.noisy_pose = args.noisy_pose
         self.vo_model = KeypointMatching(args)
 
         self.value_model = ValueModel(self.args)

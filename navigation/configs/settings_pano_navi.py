@@ -78,6 +78,7 @@ def make_settings(args, scene):
         settings["noisy_depth_multiplier"] = args.noisy_depth_multiplier
     if hasattr(args, "noisy_action"):
         settings["noisy_action"] = args.noisy_action
+        settings["noisy_action_multiplier"] = args.noisy_action_multiplier
 
     settings["scene"] = scene
     # settings["save_png"] = args.save_png
@@ -394,18 +395,23 @@ def make_cfg(settings):
         #
         #     _custom_action_impl(scene_node, delta_dist, delta_dist_angle, delta_angle)
 
+        move_noise_amount = settings['move_forward'] * settings['noisy_action_multiplier']
+        rotate_noise_amount = settings['act_rot'] * settings['noisy_action_multiplier']
+
         def _noisy_action_impl(
                 scene_node: habitat_sim.SceneNode,
                 move_amount: float,
                 rotate_angle: float,
-                noise_amount: float,
+                move_noise_amount: float,
+                rotate_noise_amount: float,
         ):
             forward_ax = (
                     np.array(scene_node.absolute_transformation().rotation_scaling())
                     @ habitat_sim.geo.FRONT
             )
+
             move_amount = np.random.uniform(
-                (1 - noise_amount) * move_amount, (1 + noise_amount) * move_amount
+                move_amount - move_noise_amount, move_amount + move_noise_amount
             )
             scene_node.translate_local(forward_ax * move_amount)
 
@@ -413,7 +419,7 @@ def make_cfg(settings):
             rotation_ax = habitat_sim.geo.UP
             # rotate_angle = np.deg2rad(rotate_angle)
             rotate_angle = np.random.uniform(
-                (1 - noise_amount) * rotate_angle, (1 + noise_amount) * rotate_angle
+                rotate_angle - rotate_noise_amount, rotate_angle + rotate_noise_amount
             )
             scene_node.rotate_local(mn.Deg(rotate_angle), rotation_ax)
             # Calling normalize is needed after rotating to deal with machine precision errors
@@ -424,17 +430,17 @@ def make_cfg(settings):
         @habitat_sim.registry.register_move_fn(body_action=True)
         class NoisyForward(habitat_sim.SceneNodeControl):
             def __call__(self, scene_node: habitat_sim.SceneNode, actuation_spec: int):
-                _noisy_action_impl(scene_node, settings['move_forward'], 0.0, noise_amount=0.01)
+                _noisy_action_impl(scene_node, settings['move_forward'], 0.0, move_noise_amount=move_noise_amount, rotate_noise_amount=rotate_noise_amount)
 
         @habitat_sim.registry.register_move_fn(body_action=True)
         class NoisyLeft(habitat_sim.SceneNodeControl):
             def __call__(self, scene_node: habitat_sim.SceneNode, actuation_spec: int):
-                _noisy_action_impl(scene_node, 0.0, settings['act_rot'], noise_amount=0.01)
+                _noisy_action_impl(scene_node, 0.0, settings['act_rot'], move_noise_amount=move_noise_amount, rotate_noise_amount=rotate_noise_amount)
 
         @habitat_sim.registry.register_move_fn(body_action=True)
         class NoisyRight(habitat_sim.SceneNodeControl):
             def __call__(self, scene_node: habitat_sim.SceneNode, actuation_spec: int):
-                _noisy_action_impl(scene_node, 0.0, -settings['act_rot'], noise_amount=0.01)
+                _noisy_action_impl(scene_node, 0.0, -settings['act_rot'], move_noise_amount=move_noise_amount, rotate_noise_amount=rotate_noise_amount)
 
 
         habitat_sim.registry.register_move_fn(NoisyForward, name="move_forward", body_action=True)

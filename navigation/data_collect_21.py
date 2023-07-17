@@ -28,7 +28,7 @@ parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
 parser.add_argument("--floorplan_data_dir", type=str, default='/home/hwing/Dataset/habitat/data/floorplans')
-parser.add_argument("--vis_floorplan", type=bool, default=True)
+parser.add_argument("--vis_floorplan", type=bool, default=False)
 parser.add_argument("--use_oracle", type=bool, default=True)
 parser.add_argument("--random_crop_data", type=bool, default=False)
 

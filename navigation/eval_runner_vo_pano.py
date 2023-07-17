@@ -175,7 +175,7 @@ class Runner:
             self.detector = SemanticPredRedNet(args)
         self.free_space_model = FreeSpaceModel(args)
         self.common_sense_model = CommonSenseModel(args)
-        self.noisy_pose = args.noisy_pose
+        # self.noisy_pose = args.noisy_pose
         self.vo_model = KeypointMatching(args)
 
         self.value_model = ValueModel(self.args)
@@ -2482,20 +2482,20 @@ class Runner:
             data_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}"
             if not os.path.exists(data_dir): os.makedirs(data_dir)
 
-            self.do_panoramic_action(self.cur_node)
-            self.do_time_steps(data_idx)
-            # try:
-            #
-            #
-            #     self.do_panoramic_action(self.cur_node)
-            #     self.do_time_steps(data_idx)
-            #
-            # except KeyboardInterrupt:
-            #     print("KeyboardInterrupt")
-            #     break
-            #
-            # except:
-            #     pass
+            # self.do_panoramic_action(self.cur_node)
+            # self.do_time_steps(data_idx)
+            try:
+
+
+                self.do_panoramic_action(self.cur_node)
+                self.do_time_steps(data_idx)
+
+            except KeyboardInterrupt:
+                print("KeyboardInterrupt")
+                break
+
+            except:
+                pass
 
 
 
