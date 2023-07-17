@@ -929,7 +929,8 @@ class Runner:
             cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, pose_origin_for_map)
             cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
             if self.local_mapper.is_traversable(curr_local_map, pose_on_map, cand_pose_on_grid_map):
-                cand_node_info = {'position': cand_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx}
+                cand_node_info = {'position': cand_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx,
+                                  'pose_on_map': cand_pose_on_grid_map, 'cand_edge': [],}
 
                 if self.vis_floorplan:
                     vis_rot_vec = rot_vec + self.abs_init_rotation
@@ -955,8 +956,14 @@ class Runner:
             # cm_score, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat, cand_image_feat, feat=True)
             for i in range(len(cand_nodes)):
                 cand_nodes[i]['clip_feat'] = cand_image_feat[i]
-                if cand_nodes[i]['next_node'] is not None:
-                    cand_nodes[i]['next_node']['clip_feat'] = cand_image_feat[i]
+
+                for j in range(i + 1, len(cand_nodes)):
+                    if self.local_mapper.is_traversable(curr_local_map, cand_nodes[i]['pose_on_map'],
+                                                        cand_nodes[j]['pose_on_map']):
+                        cand_nodes[i]['cand_edge'].append(j)
+
+                # if cand_nodes[i]['next_node'] is not None:
+                #     cand_nodes[i]['next_node']['clip_feat'] = cand_image_feat[i]
                 # cand_nodes[i]['cm_score'] = cm_score[i]
                 valid_cand_nodes.append(cand_nodes[i])
 
@@ -1065,7 +1072,11 @@ class Runner:
                                            torch.Tensor(nodes[i].pos),
                                            node_cm_scores[i]], dim=0)
 
-        adj_mtx = torch.Tensor(self.graph_map.adj_mtx) + torch.eye(graph_size)
+        ## -- compute edge weight -- ##
+        adj_mtx = np.copy(self.graph_map.adj_mtx)
+        mask = adj_mtx > 0
+        adj_mtx[mask] = 1 / (1 + np.exp(-1 / adj_mtx[mask]))
+        adj_mtx = torch.Tensor(adj_mtx) + torch.eye(graph_size)
 
         node_features, node_goal_features, node_info_features, adj_mtx = \
                                     node_features.to(f'cuda:{self.args.model_gpu}'), \
@@ -1103,11 +1114,11 @@ class Runner:
             obj_scores.append(np.squeeze(node.pred_value))
 
             # dist score
-            temp_path = self.get_shortest_path(cur_node.nodeid, id, self.graph_map.adj_mtx)
+            temp_path, temp_path_length = self.get_shortest_path(cur_node.nodeid, id, self.graph_map.adj_mtx)
             if len(temp_path) == 0:
                 dist_score = -10
             else:
-                dist_score = max(1 - len(temp_path) / max_dist, 0)
+                dist_score = max(1 - temp_path_length / max_dist, 0)
             dist_scores.append(dist_score)
 
 
@@ -1329,6 +1340,7 @@ class Runner:
     def update_cand_node_to_graph(self, cur_node, cand_nodes):
         if len(cand_nodes) == 0:
             return
+        cand_node_list = []
         for cand_node_info in cand_nodes:
             cand_node, add_new_node = self.graph_map.add_single_node(cand_node_info['position'])
             # cand_node = self.graph_map.get_node_by_pos(cand_node_info['position'])
@@ -1364,23 +1376,21 @@ class Runner:
 
             self.graph_map.update_node_feat(cand_node)
             if add_new_node:
-
-
-
                 # self.graph_map.update_node_cm_score(cand_node, cand_node_info['cm_score'])
 
                 curr_dist_to_objs, curr_is_valid = self.dist_to_objs(cand_node_info['position'] + self.abs_init_position)
                 self.graph_map.update_node_dist_to_objs(cand_node, curr_dist_to_objs)
-                self.graph_map.add_edge(cur_node, cand_node)
+                # if self.vis_floorplan:
+                cand_node.vis_pos = cand_node_info['vis_position']
 
-                if self.vis_floorplan:
-                    cand_node.vis_pos = cand_node_info['vis_position']
+            self.graph_map.add_edge(cur_node, cand_node)
+            cand_node_list.append(cand_node)
+            # elif np.linalg.norm(np.asarray(cur_node.pos) - np.asarray(cand_node.pos)) < self.edge_range * 1.05:
+            #     self.graph_map.add_edge(cur_node, cand_node)
 
-
-            elif np.linalg.norm(np.asarray(cur_node.pos) - np.asarray(cand_node.pos)) < self.edge_range * 1.05:
-                self.graph_map.add_edge(cur_node, cand_node)
-
-
+        for i, node in enumerate(cand_node_list):
+            for j in cand_nodes[i]['cand_edge']:
+                self.graph_map.add_edge(node, cand_node_list[j])
 
 
 
@@ -1400,8 +1410,11 @@ class Runner:
         path.reverse()
 
         path = [str(i) for i in path]
+        path_length = 0
+        for i, nodeid in enumerate(path[:-1]):
+            path_length += self.graph_map.adj_mtx[int(nodeid)][int(path[i + 1])]
 
-        return path[1:]
+        return path[1:], path_length
 
 
 
@@ -1619,7 +1632,7 @@ class Runner:
 
                 subgoal_id = subgoal_node.nodeid
 
-                temp_path = self.get_shortest_path(self.cur_node.nodeid, subgoal_id, self.graph_map.adj_mtx)
+                temp_path, _ = self.get_shortest_path(self.cur_node.nodeid, subgoal_id, self.graph_map.adj_mtx)
 
                 # for node_id in temp_path:
                 ## --- one node step update --- ##
@@ -1746,18 +1759,25 @@ class Runner:
                     self.local_agent.collision = True
 
 
-                if arrive_node:
-                    ### --- cur_node_position --- ###
-                    # curr_position = np.array(self.cur_node.pos)
-                    # self.cur_position = curr_position
+                # if arrive_node:
+                #     ### --- cur_node_position --- ###
+                #     # curr_position = np.array(self.cur_node.pos)
+                #     # self.cur_position = curr_position
+                #
+                #     cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1], self.depth_list[-1], curr_position,
+                #                                          curr_rotation, np.array(curr_state.position)-np.array(self.abs_init_position))
+                #     # temp_node_num = len(self.graph_map.nodes)
+                #     self.update_cand_node_to_graph(self.cur_node, cand_nodes)
+                #     # if temp_node_num < len(self.graph_map.nodes):
+                #     #     ## new cand node is added
+                #     #     break
 
-                    cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1], self.depth_list[-1], curr_position,
-                                                         curr_rotation, np.array(curr_state.position)-np.array(self.abs_init_position))
-                    # temp_node_num = len(self.graph_map.nodes)
-                    self.update_cand_node_to_graph(self.cur_node, cand_nodes)
-                    # if temp_node_num < len(self.graph_map.nodes):
-                    #     ## new cand node is added
-                    #     break
+                cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1], self.depth_list[-1], curr_position,
+                                                     curr_rotation,
+                                                     np.array(curr_state.position) - np.array(self.abs_init_position))
+                cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
+                self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes)
+
 
                 self.local_agent.gt_new_sim_origin = get_sim_location(curr_position,
                                                                       quaternion.from_rotation_vector(curr_rotation))
@@ -2462,20 +2482,20 @@ class Runner:
             data_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}"
             if not os.path.exists(data_dir): os.makedirs(data_dir)
 
-            # self.do_panoramic_action(self.cur_node)
-            # self.do_time_steps(data_idx)
-            try:
-
-
-                self.do_panoramic_action(self.cur_node)
-                self.do_time_steps(data_idx)
-
-            except KeyboardInterrupt:
-                print("KeyboardInterrupt")
-                break
-
-            except:
-                pass
+            self.do_panoramic_action(self.cur_node)
+            self.do_time_steps(data_idx)
+            # try:
+            #
+            #
+            #     self.do_panoramic_action(self.cur_node)
+            #     self.do_time_steps(data_idx)
+            #
+            # except KeyboardInterrupt:
+            #     print("KeyboardInterrupt")
+            #     break
+            #
+            # except:
+            #     pass
 
 
 
