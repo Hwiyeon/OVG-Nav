@@ -1648,26 +1648,29 @@ class Runner:
         # goal_view_points = self.goal_id_to_viewpoints[nearest_goal['id']]
         # success = self.check_close_viewpoint(last_position, goal_view_points, th=0.1)
 
-        viewpoint_dist = np.linalg.norm(self.env_class_goal_view_point[data['object_category']] - last_position, axis=1)
-        # dist = self.get_geodesic_distance_to_object_category(last_position, data['object_category'])
+        # viewpoint_dist = np.linalg.norm(self.env_class_goal_view_point[data['object_category']] - last_position, axis=1)
         goal_list = np.array([obj['position'] for obj in self.env_goal_obj_info if obj['category'] == self.goal_class_idx])
         goal_dist = np.linalg.norm(goal_list - last_position, axis=1)
-        if np.min(viewpoint_dist) < 0.1 or np.min(goal_dist) < 1.0:
-            success = 1.
-        else:
-            success = 0.
+        # if np.min(viewpoint_dist) < 0.1 or np.min(goal_dist) < 1.0:
+        #     success = 1.
+        # else:
+        #     success = 0.
             # dist = np.linalg.norm(self.viewpoint_goal_position - last_position)
             # if np.min(dist) < 0.1:
             #     success = 1.
             # else:
             #     success = 0.
-
+        dist = self.get_geodesic_distance_to_object_category(last_position, data['object_category'])
+        if dist < 0.1:
+            success = 1.
+        else:
+            success = 0.
 
 
         spl = success * data['info']['geodesic_distance'] / max(self.path_length, data['info']['geodesic_distance'])
 
 
-        return success, spl, np.min(viewpoint_dist), np.min(goal_dist)
+        return success, spl, float(dist), np.min(goal_dist)
 
     def do_time_steps(self, data_idx):
         self.abs_position = self._sim.agents[0].get_state().position
@@ -2334,22 +2337,18 @@ class Runner:
         # for idx in range(self.n_for_env):
 
         success_results = {
-            'total': {'success': 0, 'spl': 0, 'count': 0},
-            'easy': {'success': 0, 'spl': 0, 'count': 0},
-            'medium': {'success': 0, 'spl': 0, 'count': 0},
-            'hard': {'success': 0, 'spl': 0, 'count': 0},
+            'total': {'success': 0, 'spl': 0, 'dts': 0, 'count': 0},
+            'easy': {'success': 0, 'spl': 0, 'dts': 0, 'count': 0},
+            'medium': {'success': 0, 'spl': 0, 'dts': 0, 'count': 0},
+            'hard': {'success': 0, 'spl': 0, 'dts': 0, 'count': 0},
         }
-        total_success, total_spl, easy_success, easy_spl, medium_success, medium_spl, hard_success, hard_spl = \
-            [], [], [], [], [], [], [], []
+        total_success, total_spl, total_dts, easy_success, easy_spl, easy_dts, medium_success, medium_spl, medium_dts, hard_success, hard_spl, hard_dts = \
+            [], [], [], [], [], [], [], [], [], [], [], []
 
-        obj_success_results, obj_success_list, obj_spl_list = {}, {}, {}
+        obj_success_results, obj_success_list, obj_spl_list, obj_dts_list = {}, {}, {}, {}
         for obj_name in self.goal_obj_names:
-            obj_success_results[obj_name] = {'success': 0, 'spl': 0, 'count': 0}
-            obj_success_list[obj_name], obj_spl_list[obj_name] = [], []
-
-
-
-
+            obj_success_results[obj_name] = {'success': 0, 'spl': 0, 'dts': 0, 'count': 0}
+            obj_success_list[obj_name], obj_spl_list[obj_name], obj_dts_list[obj_name] = [], [], []
 
         trial = 0
         if self.data_type == 'train':
@@ -2656,27 +2655,32 @@ class Runner:
 
             total_success.append(success)
             total_spl.append(spl)
+            total_dts.append(min_dist_to_viewpoint)
             if shortest_path_length < 5.0:
                 easy_success.append(success)
                 easy_spl.append(spl)
+                easy_dts.append(min_dist_to_viewpoint)
                 path_level = 'easy'
             elif shortest_path_length < 10.0:
                 medium_success.append(success)
                 medium_spl.append(spl)
+                medium_dts.append(min_dist_to_viewpoint)
                 path_level = 'medium'
             else:
                 hard_success.append(success)
                 hard_spl.append(spl)
+                hard_dts.append(min_dist_to_viewpoint)
                 path_level = 'hard'
 
             obj_success_list[self.goal_obj_names[self.goal_class_idx]].append(success)
             obj_spl_list[self.goal_obj_names[self.goal_class_idx]].append(spl)
+            obj_dts_list[self.goal_obj_names[self.goal_class_idx]].append(min_dist_to_viewpoint)
 
             result = {
                 'goal object': self.goal_info['category'],
                 'success': success,
                 'spl': spl,
-                'min_dist_to_viewpoint': float(min_dist_to_viewpoint),
+                'dts': float(min_dist_to_viewpoint),
                 'min_dist_to_goal_center': float(min_dist_to_goal_center),
                 'action step': self.action_step,
                 'shortest_path_length': shortest_path_length,
@@ -2730,11 +2734,10 @@ class Runner:
 
             print(
                 f"[{env_idx}/{tot_env_num}] {self.env_name} - [{data_idx}/{len(valid_traj_list)}], Time : {time.time() - src_start_time} \n"
-                f"         Total - success: {np.mean(total_success)}, spl: {np.mean(total_spl)}, count: {len(total_success)} \n"
-                f"         Easy - success: {np.mean(easy_success)}, spl: {np.mean(easy_spl)}, count: {len(easy_success)} \n"
-                f"         Medium - success: {np.mean(medium_success)}, spl: {np.mean(medium_spl)}, count: {len(medium_success)} \n"
-                f"         Hard - success: {np.mean(hard_success)}, spl: {np.mean(hard_spl)}, count: {len(hard_success)} \n")
-
+                f"         Total - success: {np.mean(total_success)}, spl: {np.mean(total_spl)}, dts: {np.mean(total_dts)}, count: {len(total_success)} \n"
+                f"         Easy - success: {np.mean(easy_success)}, spl: {np.mean(easy_spl)}, dts: {np.mean(easy_dts)}, count: {len(easy_success)} \n"
+                f"         Medium - success: {np.mean(medium_success)}, spl: {np.mean(medium_spl)}, dts: {np.mean(medium_dts)}, count: {len(medium_success)} \n"
+                f"         Hard - success: {np.mean(hard_success)}, spl: {np.mean(hard_spl)}, dts: {np.mean(hard_dts)}, count: {len(hard_success)} \n")
 
 
         print(f"[{env_idx}/{tot_env_num}] {self.env_name}  Done,   Time : {time.time()-env_start_time}")
@@ -2751,26 +2754,31 @@ class Runner:
         if len(total_success) > 0:
             success_results['total']['success'] = np.mean(total_success)
             success_results['total']['spl'] = np.mean(total_spl)
+            success_results['total']['dts'] = np.mean(total_dts)
             success_results['total']['count'] = len(total_success)
         if len(easy_success) > 0:
             success_results['easy']['success'] = np.mean(easy_success)
             success_results['easy']['spl'] = np.mean(easy_spl)
+            success_results['easy']['dts'] = np.mean(easy_dts)
             success_results['easy']['count'] = len(easy_success)
         if len(medium_success) > 0:
             success_results['medium']['success'] = np.mean(medium_success)
             success_results['medium']['spl'] = np.mean(medium_spl)
+            success_results['medium']['dts'] = np.mean(medium_dts)
             success_results['medium']['count'] = len(medium_success)
         if len(hard_success) > 0:
             success_results['hard']['success'] = np.mean(hard_success)
             success_results['hard']['spl'] = np.mean(hard_spl)
+            success_results['hard']['dts'] = np.mean(hard_dts)
             success_results['hard']['count'] = len(hard_success)
 
         for obj_name in obj_success_list.keys():
             if len(obj_success_list[obj_name]) > 0:
                 obj_success = np.mean(obj_success_list[obj_name])
                 obj_spl = np.mean(obj_spl_list[obj_name])
+                obj_dts = np.mean(obj_dts_list[obj_name])
                 obj_count = len(obj_success_list[obj_name])
-                obj_success_results[obj_name] = {'success': obj_success, 'spl': obj_spl, 'count': obj_count}
+                obj_success_results[obj_name] = {'success': obj_success, 'spl': obj_spl, 'dts': obj_dts, 'count': obj_count}
 
 
         return success_results, obj_success_results

@@ -51,7 +51,7 @@ parser.add_argument("--semantic_sensor", type=bool, default=False)
 
 ## agent configs ##
 parser.add_argument("--max_frames", type=int, default=500)
-parser.add_argument("--sensing_range", type=float, default=10.0)
+parser.add_argument("--sensing_range", type=float, default=5.0)
 parser.add_argument("--move_forward", type=float, default=0.25)
 parser.add_argument("--edge_range", type=float, default=1.0)
 parser.add_argument("--last_mile_range", type=float, default=5.0)
@@ -62,7 +62,7 @@ parser.add_argument("--success_dist", type=float, default=1.0)
 ## noise configs ##
 parser.add_argument('--noisy_rgb', type=bool, default=False, help='use Gaussian noise on RGB')
 parser.add_argument('--noisy_rgb_multiplier', type=float, default=0.1, help='use Gaussian noise on RGB')
-parser.add_argument('--noisy_depth', type=bool, default=False, help='use RedwoodDepthNoiseModel')
+parser.add_argument('--noisy_depth', type=bool, default=True, help='use RedwoodDepthNoiseModel')
 parser.add_argument('--noisy_depth_multiplier', type=float, default=5., help='use RedwoodDepthNoiseModel noise multiplier')
 parser.add_argument("--noise_dir", type=str, default="navigation/noise_models")
 parser.add_argument('--noisy_action', type=bool, default=True, help='')
@@ -231,10 +231,10 @@ det_COI = [
 
 def main(env_list, dataset_list):
     success_results = {
-        'total': {'success': 0, 'spl': 0, 'count': 0},
-        'easy': {'success': 0, 'spl': 0, 'count': 0},
-        'medium': {'success': 0, 'spl': 0, 'count': 0},
-        'hard': {'success': 0, 'spl': 0, 'count': 0},
+        'total': {'success': 0, 'spl': 0, 'dts': 0, 'count': 0},
+        'easy': {'success': 0, 'spl': 0, 'dts': 0, 'count': 0},
+        'medium': {'success': 0, 'spl': 0, 'dts': 0, 'count': 0},
+        'hard': {'success': 0, 'spl': 0, 'dts': 0, 'count': 0},
     }
 
     # env_list, dataset_list = env_list[1:], dataset_list[1:]
@@ -253,7 +253,7 @@ def main(env_list, dataset_list):
 
     obj_success_results = {}
     for obj_name in goal_obj_names:
-        obj_success_results[obj_name] = {'success': 0, 'spl': 0, 'count': 0}
+        obj_success_results[obj_name] = {'success': 0, 'spl': 0, 'dts': 0, 'count': 0}
 
     # obj_success_results = {
     #     'chair': {'success': 0, 'spl': 0, 'count': 0},
@@ -286,38 +286,44 @@ def main(env_list, dataset_list):
             for key in success_results.keys():
                 prev_success = success_results[key]['success'] * success_results[key]['count']
                 prev_spl = success_results[key]['spl'] * success_results[key]['count']
+                prev_dts = success_results[key]['dts'] * success_results[key]['count']
                 prev_count = success_results[key]['count']
                 new_success = env_success_results[key]['success'] * env_success_results[key]['count']
                 new_spl = env_success_results[key]['spl'] * env_success_results[key]['count']
+                new_dts = env_success_results[key]['dts'] * env_success_results[key]['count']
                 new_count = env_success_results[key]['count']
                 success_results[key]['count'] = prev_count + new_count
                 if success_results[key]['count'] > 0:
                     success_results[key]['success'] = (prev_success + new_success) / (prev_count + new_count)
                     success_results[key]['spl'] = (prev_spl + new_spl) / (prev_count + new_count)
+                    success_results[key]['dts'] = (prev_dts + new_dts) / (prev_count + new_count)
 
 
             for key in obj_success_results.keys():
                 prev_success = obj_success_results[key]['success'] * obj_success_results[key]['count']
                 prev_spl = obj_success_results[key]['spl'] * obj_success_results[key]['count']
+                prev_dts = obj_success_results[key]['dts'] * obj_success_results[key]['count']
                 prev_count = obj_success_results[key]['count']
                 new_success = env_obj_success_results[key]['success'] * env_obj_success_results[key]['count']
                 new_spl = env_obj_success_results[key]['spl'] * env_obj_success_results[key]['count']
+                new_dts = env_obj_success_results[key]['dts'] * env_obj_success_results[key]['count']
                 new_count = env_obj_success_results[key]['count']
                 obj_success_results[key]['count'] = prev_count + new_count
                 if obj_success_results[key]['count'] > 0:
                     obj_success_results[key]['success'] = (prev_success + new_success) / (prev_count + new_count)
                     obj_success_results[key]['spl'] = (prev_spl + new_spl) / (prev_count + new_count)
+                    obj_success_results[key]['dts'] = (prev_dts + new_dts) / (prev_count + new_count)
 
 
             print(f"[{i+1}/{len(env_list)}] Done")
             print(
-                f"     Total - success: {success_results['total']['success']}, spl: {success_results['total']['spl']}, count: {success_results['total']['count']} \n"
-                f"     Easy - success: {success_results['easy']['success']}, spl: {success_results['easy']['spl']}, count: {success_results['easy']['count']} \n"
-                f"     Medium - success: {success_results['medium']['success']}, spl: {success_results['medium']['spl']}, count: {success_results['medium']['count']} \n"
-                f"     Hard - success: {success_results['hard']['success']}, spl: {success_results['hard']['spl']}, count: {success_results['hard']['count']} \n")
+                f"     Total - success: {success_results['total']['success']}, spl: {success_results['total']['spl']}, dts: {success_results['total']['dts']}, count: {success_results['total']['count']} \n"
+                f"     Easy - success: {success_results['easy']['success']}, spl: {success_results['easy']['spl']}, dts: {success_results['easy']['dts']}, count: {success_results['easy']['count']} \n"
+                f"     Medium - success: {success_results['medium']['success']}, spl: {success_results['medium']['spl']}, dts: {success_results['medium']['dts']}, count: {success_results['medium']['count']} \n"
+                f"     Hard - success: {success_results['hard']['success']}, spl: {success_results['hard']['spl']}, dts: {success_results['hard']['dts']}, count: {success_results['hard']['count']} \n")
             for obj_name in goal_obj_names:
                 print(
-                    f"     {obj_name} - success: {obj_success_results[obj_name]['success']}, spl: {obj_success_results[obj_name]['spl']}, count: {obj_success_results[obj_name]['count']}")
+                    f"     {obj_name} - success: {obj_success_results[obj_name]['success']}, spl: {obj_success_results[obj_name]['spl']}, dts: {obj_success_results[obj_name]['dts']}, count: {obj_success_results[obj_name]['count']}")
 
     with open(f'{args.save_dir}/{args.run_type}_{args.data_split}_result.json','wb') as f:
         success_results.update(obj_success_results)
