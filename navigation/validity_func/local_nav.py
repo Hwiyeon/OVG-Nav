@@ -35,6 +35,10 @@ class LocalAgent(object):
 
         self.action_idx_map = ['stop', 'move_forward', 'turn_left', 'turn_right']
 
+        self.edge_range = self.args.edge_range
+        self.max_edge_range = self.args.edge_range * 1.5
+        self.grid_m = self.mapper.params['resolution'] * 0.01
+
 
 
     def reset_with_curr_pose(self, curr_pos, curr_rot, set_rot_bias=False):
@@ -222,7 +226,8 @@ class LocalAgent(object):
         stg_x, stg_y, replan = planner.get_short_term_goal2((stg_x, stg_y))
 
         # if get_l2_distance(start[0], self.goal[0], start[1], self.goal[1]) < 3:
-        if planner.fmm_dist[self.goal[0], self.goal[1]] > np.max(planner.fmm_dist) * 0.9:
+        # if planner.fmm_dist[start[0], start[1]] > np.max(planner.fmm_dist) * 0.9: ## not navigable
+        if planner.fmm_dist[start[0], start[1]] > self.max_edge_range / self.grid_m * 1.1:  ## not directly navigable
             terminate = 1
         else:
             terminate = 0
