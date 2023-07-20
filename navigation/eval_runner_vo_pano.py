@@ -283,7 +283,7 @@ class Runner:
 
         ## text
         text1 = "Target object goal: {}   Mode: {}".format(info['target_goal'], info['mode'])
-        text2 = "Position: {}".format(info['cur_position'])
+        text2 = "Step: {}   Position: {}".format(info['step'], info['cur_position'])
         font_color = (255, 255, 255)
         text_size, _ = cv2.getTextSize(text1, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
         # text_position1 = (int((frame.shape[1] - text_size[0]) / 2), frame.shape[0] + text_size[1] * 2 + 10)
@@ -1497,6 +1497,7 @@ class Runner:
 
             self.vis_info['cur_position'] = curr_position
             self.vis_info['mode'] = 'node search'
+            self.vis_info['step'] = self.action_step
 
             # det_pano, _, _, _, _, _ = self.detector.predicted_img(self.pano_rgb_list[-1].astype(np.uint8), show=True)
             total_frame = self.make_total_frame(det['det_img'], obs['depth_sensor'], vis_graph_map, vis_local_map,
@@ -1602,36 +1603,15 @@ class Runner:
                 self.do_panoramic_action(self.cur_node)
             if invalid_edge:
                 # return to the previous node
-                temp_goal_node = self.graph_map.get_node_by_id(self.cur_node.nodeid)
-                temp_goal_position = self.cur_node.pos
+                # temp_goal_node = self.graph_map.get_node_by_id(self.cur_node.nodeid)
+                # temp_goal_position = self.cur_node.pos
+                cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
+                temp_goal_node = self.graph_map.get_node_by_id(cur_node_id)
+                temp_goal_position = temp_goal_node.pos
             else:
                 subgoal_node = self.get_next_subgoal_using_graph(self.cur_node)
                 if subgoal_node == None:
                     return
-
-                # ## check if the subgoal is reachable
-                # subgoal_position = subgoal_node.pos
-                # if np.linalg.norm(subgoal_position - curr_position) < self.graph_map.max_edge_length and \
-                #     self.graph_map.adj_mtx[int(self.cur_node.nodeid), int(subgoal_node.nodeid)] == 0:
-                #     rot_to_face = int(np.round(((math.degrees(math.atan2(subgoal_position[0] - curr_position[0],
-                #                                            -subgoal_position[2] + curr_position[2])) % 360) - (
-                #                               -math.degrees(curr_rotation[1]) % 360)))) // self.act_rot
-                #     if rot_to_face < -180/self.act_rot:
-                #         rot_to_face += int(360/self.act_rot)
-                #     elif rot_to_face > 180/self.act_rot:
-                #         rot_to_face -= int(360/self.act_rot)
-                #     for rot in range(abs(rot_to_face)):
-                #         if rot_to_face < 0:
-                #             action = 'turn_left'
-                #         else:
-                #             action = 'turn_right'
-                #         self.end_episode = self.do_explicit_action(self.cur_node, action, curr_goal_node=subgoal_node)
-                #         if self.end_episode:
-                #             # last mile navigation activated in explicit action
-                #             return
-                #
-                #     curr_position = self.cur_position
-                #     curr_rotation = self.cur_rotation
 
                 subgoal_id = subgoal_node.nodeid
 
@@ -1721,6 +1701,7 @@ class Runner:
                         self.vis_info['mode'] = 'Return to the previous node'
                     else:
                         self.vis_info['mode'] = 'Exploration'
+                    self.vis_info['step'] = self.action_step
                     vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
                     # det_pano, _, _, _, _, _ = self.detector.predicted_img(self.pano_rgb_list[-1].astype(np.uint8), show=True)
                     total_frame = self.make_total_frame(det['det_img'], obs['depth_sensor'], vis_graph_map, vis_local_map,
@@ -2040,6 +2021,7 @@ class Runner:
 
                 self.vis_info['cur_position'] = curr_position
                 self.vis_info['mode'] = 'Last mile'
+                self.vis_info['step'] = self.action_step
                 # det_pano, _, _, _, _, _ = self.detector.predicted_img(self.pano_rgb_list[-1].astype(np.uint8), show=True)
                 total_frame = self.make_total_frame(det['det_img'], obs['depth_sensor'], vis_graph_map, vis_local_map,
                                                     pano_rgb=self.pano_rgb_list[-1],
@@ -2397,6 +2379,7 @@ class Runner:
                     'mode': 'Exploration',
                     'cur_position': self.cur_position,
                     'obj_position': None,
+                    'step': 0,
                 }
 
 
@@ -2477,6 +2460,7 @@ class Runner:
                 vis_local_map = np.zeros([241, 241, 3])
                 self.vis_info['cur_position'] = self.cur_position
                 self.vis_info['mode'] = 'Exploration'
+                self.vis_info['step'] = self.action_step
                 # det_pano, _, _, _, _, _ = self.detector.predicted_img(self.pano_rgb_list[-1].astype(np.uint8), show=True)
                 total_frame = self.make_total_frame(det['det_img'], obs['depth_sensor'], vis_graph_map, vis_local_map,
                                                     pano_rgb=self.pano_rgb_list[-1],
@@ -2618,7 +2602,7 @@ class Runner:
                 json.dump(result, f)
 
             print(
-                f"[{env_idx}/{tot_env_num}] {self.env_name} - [{data_idx}/{len(valid_traj_list)}], Time : {time.time() - src_start_time} \n"
+                f"[{env_idx}/{tot_env_num}] {self.env_name} - [{data_idx}/{len(valid_traj_list)}], Step: {self.action_step},  Time : {time.time() - src_start_time} \n"
                 f"         Total - success: {np.mean(total_success)}, spl: {np.mean(total_spl)}, dts: {np.mean(total_dts)}, count: {len(total_success)} \n"
                 f"         Easy - success: {np.mean(easy_success)}, spl: {np.mean(easy_spl)}, dts: {np.mean(easy_dts)}, count: {len(easy_success)} \n"
                 f"         Medium - success: {np.mean(medium_success)}, spl: {np.mean(medium_spl)}, dts: {np.mean(medium_dts)}, count: {len(medium_success)} \n"

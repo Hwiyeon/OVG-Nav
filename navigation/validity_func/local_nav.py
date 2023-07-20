@@ -227,7 +227,7 @@ class LocalAgent(object):
 
         # if get_l2_distance(start[0], self.goal[0], start[1], self.goal[1]) < 3:
         # if planner.fmm_dist[start[0], start[1]] > np.max(planner.fmm_dist) * 0.9: ## not navigable
-        if planner.fmm_dist[start[0], start[1]] > self.max_edge_range / self.grid_m * 1.1:  ## not directly navigable
+        if planner.fmm_dist[start[0], start[1]] > self.max_edge_range / self.grid_m * 1.5:  ## not directly navigable
             terminate = 1
         else:
             terminate = 0
