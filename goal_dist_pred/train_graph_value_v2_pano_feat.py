@@ -14,11 +14,12 @@ parser.add_argument('--vis_feat_dim', default=512, type=int)
 parser.add_argument('--max_dist', default=30., type=float)
 parser.add_argument('--use_cm_score', default=True, type=bool)
 parser.add_argument('--goal_cat', type=str, default='mp3d_21')
-parser.add_argument('--adj_loss_cf', default=0.5, type=float)
+parser.add_argument('--value_loss_cf', default=1.0, type=float)
+parser.add_argument('--adj_loss_cf', default=10., type=float)
 
 # Optimization options
 parser.add_argument('--batch-size', type=int, default=256, help="learning rate (default: 1e-05)")
-parser.add_argument('--lr', type=float, default=0.01, help="learning rate (default: 1e-05)")
+parser.add_argument('--lr', type=float, default=0.001, help="learning rate (default: 1e-05)")
 parser.add_argument('--momentum', type=float, default=0.9)
 parser.add_argument('--weight_decay', type=float, default=1e-4)
 parser.add_argument('--max-epoch', type=int, default=10, help="maximum epoch for training (default: 60)")
@@ -28,12 +29,12 @@ parser.add_argument('--beta', type=float, default=0.01, help="weight for summary
 
 # Misc
 parser.add_argument('--seed', type=int, default=100, help="random seed (default: 1)")
-parser.add_argument('--gpu', type=str, default='8', help="which gpu devices to use")
+parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
-# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0704/21cat_relative_pose_step_by_step_pano', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
+# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0704/21cat_relative_pose_step_by_step_pano', type=str)
 # parser.add_argument('--data-dir_aug', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cmv2', type=str)
 # parser.add_argument('--data-dir_aug', default=[
 #                                               '/data2/hwing/Dataset/cm_graph/mp3d/0622/no_rot_bias_step_by_step_v2',
@@ -44,7 +45,7 @@ parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/07
 parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_0716/0716_mp3d21_panov2_goalscore_con_adjmtx_adjloss0.5_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_panov2_goalscore_wadjmtx_valueloss_{}_adjlossv2_{}_{}_maxdist{}_lr{}', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_v4_running_addnode', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
@@ -67,6 +68,7 @@ import torch.backends.cudnn as cudnn
 import numpy as np
 import random
 import time
+from datetime import datetime
 
 import pickle
 import sys
@@ -82,10 +84,13 @@ import matplotlib.pyplot as plt
 from utils.obj_category_info import assign_room_category, obj_names_det, mp3d_goal_obj_names, room_names, obj_names, gibson_goal_obj_names
 
 
+cur_date = str(datetime.now().date())
+cur_time = str(datetime.now().time())[:5].replace(":", "-")
+
 if args.use_cm_score:
-    args.log_dir = args.log_dir.format('use_cm', args.max_dist, args.lr)
+    args.log_dir = args.log_dir.format(cur_date, cur_time, args.value_loss_cf, args.adj_loss_cf, 'use_cm', args.max_dist, args.lr)
 else:
-    args.log_dir = args.log_dir.format('no_cm', args.max_dist, args.lr)
+    args.log_dir = args.log_dir.format(cur_date, cur_time, args.value_loss_cf, args.adj_loss_cf, 'no_cm', args.max_dist, args.lr)
 
 print(args)
 torch.manual_seed(args.seed)
@@ -301,17 +306,18 @@ def main():
                 eyes = torch.eye(len(adj_mtx)).cuda()
             adj_mtx_dig0 = adj_mtx * (1-eyes[:len(adj_mtx), :len(adj_mtx)])
             indices = torch.nonzero(adj_mtx_dig0, as_tuple=True)
-            adj_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+            # adj_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+            adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]], node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
             if torch.isnan(adj_loss):
                 adj_loss = torch.tensor(0.0).cuda()
 
-            loss = value_loss + args.adj_loss_cf * adj_loss
+            loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss
 
             loss.backward()
             optimizer.step()
 
             disp_loss += loss.item()
-            disp_value_loss += value_loss.item()
+            disp_value_loss += args.value_loss_cf * value_loss.item()
             disp_adj_loss += args.adj_loss_cf * adj_loss.item()
             disp_value_acc += torch.mean(torch.where(abs(pred_dist-node_goal_dists) <= 0.1 ,1, 0).float())
 
@@ -387,14 +393,16 @@ def main():
                     eyes = torch.eye(len(adj_mtx)).cuda()
                 adj_mtx_dig0 = adj_mtx * (1 - eyes[:len(adj_mtx), :len(adj_mtx)])
                 indices = torch.nonzero(adj_mtx_dig0, as_tuple=True)
-                adj_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+                # adj_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+                adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]],
+                                     node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
                 if torch.isnan(adj_loss):
                     adj_loss = torch.tensor(0.0).cuda()
 
-                loss = value_loss + args.adj_loss_cf * adj_loss
+                loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss
 
                 disp_loss += loss.item()
-                disp_value_loss += value_loss.item()
+                disp_value_loss += args.value_loss_cf * value_loss.item()
                 disp_adj_loss += args.adj_loss_cf * adj_loss.item()
                 value_acc = torch.mean(torch.where(abs(pred_dist - node_goal_dists) <= 0.1, 1, 0).float())
                 # if node_goal_dists.size()[0] >= 3:
@@ -674,14 +682,16 @@ def eval(checkpoint_path):
                 eyes = torch.eye(len(adj_mtx)).cuda()
             adj_mtx_dig0 = adj_mtx * (1 - eyes[:len(adj_mtx), :len(adj_mtx)])
             indices = torch.nonzero(adj_mtx_dig0, as_tuple=True)
-            adj_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+            # adj_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+            adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]],
+                                 node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
             if torch.isnan(adj_loss):
                 adj_loss = torch.tensor(0.0).cuda()
 
-            loss = value_loss + args.adj_loss_cf * adj_loss
+            loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss
 
             disp_loss += loss.item()
-            disp_value_loss += value_loss.item()
+            disp_value_loss += args.value_loss_cf * value_loss.item()
             disp_adj_loss += args.adj_loss_cf * adj_loss.item()
 
             value_acc = torch.mean(torch.where(abs(pred_dist - node_goal_dists) <= 0.1, 1, 0).float())
@@ -754,10 +764,11 @@ def eval(checkpoint_path):
 
 if __name__ == '__main__':
 
-    # main()
+    main()
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0610/0610_v2_1_use_cm_maxdist30.0_lr0.001/model_25.pth')
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0616/0616_combv2_modelv2_1_use_cm_maxdist30.0_lr0.0001/model_20.pth')
     # eval('/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0701/0701_relpose_stepbystep_pano_goalscore_use_cm_maxdist30.0_lr0.01/model_20.pth')
+    # eval('/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0706/0706_mp3d21_pano_goalscore_no_cm_maxdist30.0_lr0.01/model_17.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0706/0706_mp3d21_pano_goalscore_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0712/0712_mp3d21_front_goalscore_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
-    eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0716/0716_mp3d21_panov2_goalscore_wadjmtx_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
+    # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0716/0716_mp3d21_panov2_goalscore_wadjmtx_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')

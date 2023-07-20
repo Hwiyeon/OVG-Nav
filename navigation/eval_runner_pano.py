@@ -625,7 +625,7 @@ class Runner:
             success = 'SUCCESS' if result['success'] == 1 else 'FAIL'
             txt = 'goal: {}, {}, SPL: {:.4f}, min_dist_to_viewpoint {:.4f}, min_dist_to_object_center {:.4f}, actions {}'.format(result['goal object'], success,
                                                                                   result['spl'],
-                                                                                  result['min_dist_to_viewpoint'],
+                                                                                  result['dts'],
                                                                                   result['min_dist_to_goal_center'],
                                                                                   result['action step'])
 
@@ -634,7 +634,7 @@ class Runner:
                 result['spl'],
                 result['action step'])
             txt2 = 'viewpoint dist {:.4f}, obj center dist {:.4f}'.format(
-                result['min_dist_to_viewpoint'],
+                result['dts'],
                 result['min_dist_to_goal_center'])
 
 

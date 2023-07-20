@@ -142,7 +142,7 @@ class Runner:
         self.edge_range = args.edge_range
         self.last_mile_range = args.last_mile_range
         self.goal_det_dist = args.success_dist - args.move_forward
-        self.goal_obs_consistency_th = 1 # number of time steps that the goal is visible for the goal to be considered as correctly detected
+        self.goal_obs_consistency_th = args.goal_obs_count # number of time steps that the goal is visible for the goal to be considered as correctly detected
 
         self.vo_height = args.front_height
         self.vo_width = args.front_width
@@ -602,10 +602,10 @@ class Runner:
 
         if result is not None:
             success = 'SUCCESS' if result['success'] == 1 else 'FAIL'
-            txt = 'goal: {}, {}, SPL: {:.4f}, min_dist_to_viewpoint {:.4f}, min_dist_to_object_center {:.4f}, actions {}'.format(
+            txt = 'goal: {}, {}, SPL: {:.4f}, DTS {:.4f}, min_dist_to_object_center {:.4f}, actions {}'.format(
                 result['goal object'], success,
                 result['spl'],
-                result['min_dist_to_viewpoint'],
+                result['dts'],
                 result['min_dist_to_goal_center'],
                 result['action step'])
 
@@ -613,8 +613,8 @@ class Runner:
                 result['goal object'], success,
                 result['spl'],
                 result['action step'])
-            txt2 = 'viewpoint dist {:.4f}, obj center dist {:.4f}'.format(
-                result['min_dist_to_viewpoint'],
+            txt2 = 'DTS {:.4f}, obj center dist {:.4f}'.format(
+                result['dts'],
                 result['min_dist_to_goal_center'])
 
             font = cv2.FONT_HERSHEY_SIMPLEX
@@ -1885,11 +1885,12 @@ class Runner:
             self.graph_map.update_node_vis_feat(self.cur_node)
 
             self.graph_map.update_node_visited(self.cur_node)
-            self.graph_map.update_node_feat(self.cur_node)
+            # self.graph_map.update_node_feat(self.cur_node)
 
-            self.graph_map.update_node_pos(self.cur_node, curr_position)
-            if self.vis_floorplan:
-                self.cur_node.vis_pos = curr_state.position - self.abs_init_position
+            ## -- update node pose?? -- ##
+            # self.graph_map.update_node_pos(self.cur_node, curr_position)
+            # if self.vis_floorplan:
+            #     self.cur_node.vis_pos = curr_state.position - self.abs_init_position
 
             curr_dist_to_objs, curr_is_valid = self.dist_to_objs(curr_state.position)
             self.graph_map.update_node_dist_to_objs(self.cur_node, curr_dist_to_objs)
