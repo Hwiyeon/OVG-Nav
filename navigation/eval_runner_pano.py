@@ -2707,8 +2707,8 @@ class Runner:
             #
             # self.save_obj_data(obj_data, self.args.save_dir, self.env_name, data_idx, tot=True)
 
-            with open(f'{save_dir}/graph.pkl', 'wb') as f:
-                pickle.dump(self.graph_map, f)
+            # with open(f'{save_dir}/graph.pkl', 'wb') as f:
+            #     pickle.dump(self.graph_map, f)
 
             cur_goal_obj_category_name = self.goal_info['category']
             if self.vis_floorplan:
