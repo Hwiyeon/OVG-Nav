@@ -15,7 +15,8 @@ parser.add_argument('--max_dist', default=30., type=float)
 parser.add_argument('--use_cm_score', default=True, type=bool)
 parser.add_argument('--goal_cat', type=str, default='mp3d_21')
 parser.add_argument('--value_loss_cf', default=1.0, type=float)
-parser.add_argument('--adj_loss_cf', default=10., type=float)
+parser.add_argument('--adj_loss_cf', default=10.0, type=float)
+parser.add_argument('--sign_loss_cf', default=0.1, type=float)
 
 # Optimization options
 parser.add_argument('--batch-size', type=int, default=256, help="learning rate (default: 1e-05)")
@@ -29,7 +30,7 @@ parser.add_argument('--beta', type=float, default=0.01, help="weight for summary
 
 # Misc
 parser.add_argument('--seed', type=int, default=100, help="random seed (default: 1)")
-parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
+parser.add_argument('--gpu', type=str, default='6', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
@@ -45,8 +46,8 @@ parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/07
 parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_panov2_goalscore_wadjmtx_valueloss_{}_adjlossv2_{}_{}_maxdist{}_lr{}', type=str)
-parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_v4_running_addnode', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_panov2_goalscore_wadjmtx_valueloss_{}_adjlossv2_{}_signloss{}_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_lossv4', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
 parser.add_argument('--checkpoints', type=str, default=None)
@@ -88,9 +89,9 @@ cur_date = str(datetime.now().date())
 cur_time = str(datetime.now().time())[:5].replace(":", "-")
 
 if args.use_cm_score:
-    args.log_dir = args.log_dir.format(cur_date, cur_time, args.value_loss_cf, args.adj_loss_cf, 'use_cm', args.max_dist, args.lr)
+    args.log_dir = args.log_dir.format(cur_date, cur_time, args.value_loss_cf, args.adj_loss_cf, args.sign_loss_cf, 'use_cm', args.max_dist, args.lr)
 else:
-    args.log_dir = args.log_dir.format(cur_date, cur_time, args.value_loss_cf, args.adj_loss_cf, 'no_cm', args.max_dist, args.lr)
+    args.log_dir = args.log_dir.format(cur_date, cur_time, args.value_loss_cf, args.adj_loss_cf, args.sign_loss_cf, 'no_cm', args.max_dist, args.lr)
 
 print(args)
 torch.manual_seed(args.seed)
@@ -98,6 +99,10 @@ torch.manual_seed(args.seed)
 
 if not os.path.exists(args.log_dir):
     os.makedirs(args.log_dir)
+
+
+def sign_penalty_loss(y_pred, y_true):
+    return torch.mean((y_true * y_pred < 0).float())
 
 
 def main():
@@ -217,15 +222,19 @@ def main():
         wandb.define_metric("val/loss", step_metric="epoch")
         wandb.define_metric("val/value_loss", step_metric="epoch")
         wandb.define_metric("val/adj_loss", step_metric="epoch")
+        wandb.define_metric("val/sign_loss", step_metric="epoch")
         wandb.define_metric("val/value_acc", step_metric="epoch")
         wandb.define_metric("val/rank_acc_3", step_metric="epoch")
         wandb.define_metric("val/rank_acc_1", step_metric="epoch")
+        wandb.define_metric("val/rank_score", step_metric="epoch")
         wandb.define_metric("val/pred_diff", step_metric="epoch")
+
 
         for obj_name in goal_obj_names:
             wandb.define_metric("val/obj_value_acc/{}".format(obj_name), step_metric="epoch")
             wandb.define_metric("val/obj_rank_acc_3/{}".format(obj_name), step_metric="epoch")
             wandb.define_metric("val/obj_rank_acc_1/{}".format(obj_name), step_metric="epoch")
+            wandb.define_metric("val/obj_rank_score/{}".format(obj_name), step_metric="epoch")
             wandb.define_metric("val/obj_pred_diff/{}".format(obj_name), step_metric="epoch")
 
 
@@ -280,6 +289,7 @@ def main():
         disp_loss = 0.0
         disp_value_loss = 0.0
         disp_adj_loss = 0.0
+        disp_sign_loss = 0.0
         disp_value_acc = 0.0
 
 
@@ -311,7 +321,9 @@ def main():
             if torch.isnan(adj_loss):
                 adj_loss = torch.tensor(0.0).cuda()
 
-            loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss
+            sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]], node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
+
+            loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss + args.sign_loss_cf * sign_loss
 
             loss.backward()
             optimizer.step()
@@ -319,6 +331,7 @@ def main():
             disp_loss += loss.item()
             disp_value_loss += args.value_loss_cf * value_loss.item()
             disp_adj_loss += args.adj_loss_cf * adj_loss.item()
+            disp_sign_loss += args.sign_loss_cf * sign_loss.item()
             disp_value_acc += torch.mean(torch.where(abs(pred_dist-node_goal_dists) <= 0.1 ,1, 0).float())
 
             cnt += 1
@@ -330,7 +343,7 @@ def main():
                 end_time = time.time()
 
                 print(f'[Epoch: {epoch+1}/{args.max_epoch}] {cnt}/{train_batch_num} iter, loss: {disp_loss / disp_iter:.5f}, '
-                      f'value_loss: {disp_value_loss / disp_iter:.5f}, adj_loss: {disp_adj_loss / disp_iter:.5f}, '
+                      f'value_loss: {disp_value_loss / disp_iter:.5f}, adj_loss: {disp_adj_loss / disp_iter:.5f}, sign_loss: {disp_sign_loss / disp_iter:.5f}, '
                       f'value_acc: {disp_value_acc / (disp_iter):.5f},'
                       f'lr: {lr_scheduler.get_lr()[0]:.5f}, time: {(end_time - start_time)//60:.0f}:{(end_time - start_time)%60:.0f}'
                       )
@@ -339,6 +352,7 @@ def main():
                     'train/loss': float(disp_loss / (disp_iter)),
                     'train/value_loss': float(disp_value_loss / (disp_iter)),
                     'train/adj_loss': float(disp_adj_loss / (disp_iter)),
+                    'train/sign_loss': float(disp_sign_loss / (disp_iter)),
                     'train/acc': float(disp_value_acc / (disp_iter)),
                     'train/lr': lr_scheduler.get_lr()[0],
                 }
@@ -348,6 +362,7 @@ def main():
                 disp_loss = 0.0
                 disp_value_loss = 0.0
                 disp_adj_loss = 0.0
+                disp_sign_loss = 0.0
                 disp_value_acc = 0.0
 
                 disp_iter = 0
@@ -362,25 +377,33 @@ def main():
             disp_loss = 0.0
             disp_value_loss = 0.0
             disp_adj_loss = 0.0
+            disp_sign_loss = 0.0
             disp_value_acc = 0.0
             disp_rank_acc_3 = 0.0
             disp_rank_acc_1 = 0.0
+            disp_rank_score = 0.0
             disp_pred_diff = 0.0
             cnt_in_val = 0
             start_time = time.time()
             # for i, data in enumerate(valid_loader, 0):
             obj_results = {}
             for obj_name in goal_obj_names:
-                obj_results[obj_name] = {'count': 0, 'disp_value_acc': 0, 'disp_rank_acc_3': 0, 'disp_rank_acc_1': 0, 'disp_pred_diff': 0}
+                obj_results[obj_name] = {'count': 0, 'disp_value_acc': 0, 'disp_rank_acc_3': 0, 'disp_rank_acc_1': 0, 'disp_rank_score':0, 'disp_pred_diff': 0}
 
             for data in tqdm(valid_loader, total=len(val_list)):
-                cnt_in_val += 1
+
                 features = data['node_features'].cuda()
                 info_features = data['node_info_features'].cuda()
                 goal_features = data['node_goal_features'].cuda()
                 adj_mtx = data['adj_mtx'].cuda()
                 node_goal_dists = data['node_goal_dists'].cuda()
                 goal_idx = data['goal_idx']
+
+                cand_nodes = 1 - info_features[:, 0]
+                if torch.sum(cand_nodes) < 3:
+                    continue
+
+                cnt_in_val += 1
 
                 pred_dist = model(features, goal_features, info_features, adj_mtx)
 
@@ -399,17 +422,21 @@ def main():
                 if torch.isnan(adj_loss):
                     adj_loss = torch.tensor(0.0).cuda()
 
-                loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss
+                sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]],
+                                              node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
+
+                loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss + args.sign_loss_cf * sign_loss
 
                 disp_loss += loss.item()
                 disp_value_loss += args.value_loss_cf * value_loss.item()
                 disp_adj_loss += args.adj_loss_cf * adj_loss.item()
+                disp_sign_loss += args.sign_loss_cf * sign_loss.item()
                 value_acc = torch.mean(torch.where(abs(pred_dist - node_goal_dists) <= 0.1, 1, 0).float())
                 # if node_goal_dists.size()[0] >= 3:
                 #     topk_list = torch.topk(node_goal_dists, 3, dim=0).indices
                 # else:
                 #     topk_list = torch.topk(node_goal_dists, node_goal_dists.size()[0], dim=0).indices
-                cand_nodes = 1 - info_features[:, 0]
+                # cand_nodes = 1 - info_features[:, 0]
                 if torch.sum(cand_nodes) == 0:
                     topk_list = None
                 elif torch.sum(cand_nodes) >= 3:
@@ -424,12 +451,16 @@ def main():
                     rank_acc_3 = float(torch.argmax(pred_dist[cand_nodes > 0], dim=0) in topk_list)
                     rank_acc_1 = float(torch.argmax(pred_dist[cand_nodes > 0], dim=0) in topk_list[0])
 
+                oracle_rank = torch.topk(node_goal_dists[cand_nodes > 0], int(torch.sum(cand_nodes)), dim=0).indices[:,0]
+                rank_score = 1 - float((torch.where(oracle_rank == torch.argmax(pred_dist[cand_nodes > 0], dim=0))[0]) / torch.sum(cand_nodes))
+
                 pred_diff = np.linalg.norm(
                     data['node_pose'][torch.argmax(pred_dist)] - data['node_pose'][torch.argmax(node_goal_dists)])
 
                 disp_value_acc += value_acc
                 disp_rank_acc_3 += rank_acc_3
                 disp_rank_acc_1 += rank_acc_1
+                disp_rank_score += rank_score
                 disp_pred_diff += pred_diff
 
                 for i in range(len(goal_obj_names)):
@@ -438,6 +469,7 @@ def main():
                         obj_results[goal_obj_names[i]]['disp_value_acc'] += value_acc
                         obj_results[goal_obj_names[i]]['disp_rank_acc_3'] += rank_acc_3
                         obj_results[goal_obj_names[i]]['disp_rank_acc_1'] += rank_acc_1
+                        obj_results[goal_obj_names[i]]['disp_rank_score'] += rank_score
                         obj_results[goal_obj_names[i]]['disp_pred_diff'] += pred_diff
 
 
@@ -452,18 +484,21 @@ def main():
                 'val/loss': float(disp_loss / (cnt_in_val)),
                 'val/value_loss': float(disp_value_loss / (cnt_in_val)),
                 'val/adj_loss': float(disp_adj_loss / (cnt_in_val)),
+                'val/sign_loss': float(disp_sign_loss / (cnt_in_val)),
                 'val/value_acc': float(disp_value_acc / (cnt_in_val)),
                 'val/rank_acc_3': float(disp_rank_acc_3 / (cnt_in_val)),
                 'val/rank_acc_1': float(disp_rank_acc_1 / (cnt_in_val)),
+                'val/rank_score': float(disp_rank_score / (cnt_in_val)),
                 'val/pred_diff': float(disp_pred_diff / (cnt_in_val)),
             }
 
             print(
                 f'Val [Epoch: {epoch + 1}/{args.max_epoch}],loss: {disp_loss / cnt_in_val:.5f}, '
-                f'value_loss: {disp_value_loss / cnt_in_val:.5f}, adj_loss: {disp_adj_loss / cnt_in_val:.5f}, '
+                f'value_loss: {disp_value_loss / cnt_in_val:.5f}, adj_loss: {disp_adj_loss / cnt_in_val:.5f}, sign_loss: {disp_sign_loss / cnt_in_val:.5f}, '
                 f'value_acc: {disp_value_acc / (cnt_in_val):.5f}, '
                 f'rank_acc_3: {disp_rank_acc_3 / (cnt_in_val):.5f}, '
                 f'rank_acc_1: {disp_rank_acc_1 / (cnt_in_val):.5f}, '
+                f'rank_score: {disp_rank_score / (cnt_in_val):.5f}, '
                 f'pred_diff: {disp_pred_diff / (cnt_in_val):.5f},'
                 f'lr: {lr_scheduler.get_lr()[0]:.5f}, time: {(end_time - start_time)//60:.0f}:{(end_time - start_time)%60:.0f}')
 
@@ -473,16 +508,19 @@ def main():
                 obj_disp_value_acc = obj_results[obj_name]['disp_value_acc']
                 obj_disp_rank_acc_3 = obj_results[obj_name]['disp_rank_acc_3']
                 obj_disp_rank_acc_1 = obj_results[obj_name]['disp_rank_acc_1']
+                obj_disp_rank_score = obj_results[obj_name]['disp_rank_score']
                 obj_disp_pred_diff = obj_results[obj_name]['disp_pred_diff']
                 print(
                     f'     {obj_name} - value_acc: {obj_disp_value_acc / cnt:.5f}, '
                     f'rank_acc_3: {obj_disp_rank_acc_3 / cnt:.5f}, '
                     f'rank_acc_1: {obj_disp_rank_acc_1 / cnt:.5f}, '
+                    f'rank_score: {obj_disp_rank_score / cnt:.5f}, '
                     f'pred_diff: {obj_disp_pred_diff / cnt:.5f}, cnt: {cnt}')
 
                 val_metrics[f'val/obj_value_acc/{obj_name}'] = float(obj_disp_value_acc / cnt)
                 val_metrics[f'val/obj_rank_acc_3/{obj_name}'] = float(obj_disp_rank_acc_3 / cnt)
                 val_metrics[f'val/obj_rank_acc_1/{obj_name}'] = float(obj_disp_rank_acc_1 / cnt)
+                val_metrics[f'val/obj_rank_score/{obj_name}'] = float(obj_disp_rank_score / cnt)
                 val_metrics[f'val/obj_pred_diff/{obj_name}'] = float(obj_disp_pred_diff / cnt)
 
 
@@ -504,23 +542,27 @@ def main():
 
     print('Finished Training')
     print(
-        f'Val [loss: {disp_loss / cnt_in_val:.5f}, value_loss: {disp_value_loss / cnt_in_val:.5f}, adj_loss: {disp_adj_loss / cnt_in_val:.5f}, '
+        f'Val [loss: {disp_loss / cnt_in_val:.5f}, value_loss: {disp_value_loss / cnt_in_val:.5f}, adj_loss: {disp_adj_loss / cnt_in_val:.5f}, sign_loss: {disp_sign_loss / cnt_in_val:.5f}, '
         f'dist_acc: {disp_value_acc / (cnt_in_val):.5f}, '
         f'rank_acc_3: {disp_rank_acc_3 / (cnt_in_val):.5f}, '
         f'rank_acc_1: {disp_rank_acc_1 / (cnt_in_val):.5f}, '
+        f'rank_score: {disp_rank_score / (cnt_in_val):.5f}, '
         f'pred_diff: {disp_pred_diff / (cnt_in_val):.5f}, '
         f'lr: {lr_scheduler.get_lr()[0]:.5f}, time: {(time.time() - train_start_time) // 60:.0f}:{(time.time() - train_start_time) % 60:.0f}')
 
     for obj_name in goal_obj_names:
         cnt = obj_results[obj_name]['count']
-        if cnt == 0: continue
+        if cnt == 0:
+            continue
         obj_disp_value_acc = obj_results[obj_name]['disp_value_acc']
         obj_disp_rank_acc_3 = obj_results[obj_name]['disp_rank_acc_3']
         obj_disp_rank_acc_1 = obj_results[obj_name]['disp_rank_acc_1']
+        obj_disp_rank_score = obj_results[obj_name]['disp_rank_score']
         obj_disp_pred_diff = obj_results[obj_name]['disp_pred_diff']
         print(f'     {obj_name} - value_acc: {obj_disp_value_acc / cnt:.5f}, '
               f'rank_acc_3: {obj_disp_rank_acc_3 / cnt:.5f}, '
                 f'rank_acc_1: {obj_disp_rank_acc_1 / cnt:.5f}, '
+                f'rank_score: {obj_disp_rank_score / cnt:.5f}, '
               f'pred_diff: {obj_disp_pred_diff / cnt:.5f}, cnt: {cnt}')
 
 
@@ -529,23 +571,30 @@ def main():
     with open(args.log_dir + '/result.txt', 'w') as f:
         f.write(str(args))
         f.write('\n')
-        f.write(f'Val [loss: {disp_loss / cnt_in_val:.5f}, value_loss: {disp_value_loss / cnt_in_val:.5f}, adj_loss: {disp_adj_loss / cnt_in_val:.5f}, '
+        f.write(f'Val [loss: {disp_loss / cnt_in_val:.5f}, value_loss: {disp_value_loss / cnt_in_val:.5f}, adj_loss: {disp_adj_loss / cnt_in_val:.5f}, sign_loss: {disp_sign_loss / cnt_in_val:.5f}, '
                 f'value_acc: {disp_value_acc / (cnt_in_val):.5f}, '
                 f'rank_acc_3: {disp_rank_acc_3 / (cnt_in_val):.5f}, '
                 f'rank_acc_1: {disp_rank_acc_1 / (cnt_in_val):.5f}, '
+                f'rank_score: {disp_rank_score / (cnt_in_val):.5f}, '
                 f'pred_diff: {disp_pred_diff / (cnt_in_val):.5f}, '
                 f'lr: {lr_scheduler.get_lr()[0]:.5f}, time: {(time.time() - train_start_time) // 60:.0f}:{(time.time() - train_start_time) % 60:.0f}\n')
 
         for obj_name in goal_obj_names:
             cnt = obj_results[obj_name]['count']
+            disp_cnt = cnt
+            if cnt == 0:
+                cnt = 1
+
             obj_disp_value_acc = obj_results[obj_name]['disp_value_acc']
             obj_disp_rank_acc_3 = obj_results[obj_name]['disp_rank_acc_3']
             obj_disp_rank_acc_1 = obj_results[obj_name]['disp_rank_acc_1']
+            obj_disp_rank_score = obj_results[obj_name]['disp_rank_score']
             obj_disp_pred_diff = obj_results[obj_name]['disp_pred_diff']
             f.write(f'     {obj_name} - value_acc: {obj_disp_value_acc / cnt:.5f}, '
                     f'rank_acc_3: {obj_disp_rank_acc_3 / cnt:.5f}, '
                     f'rank_acc_1: {obj_disp_rank_acc_1 / cnt:.5f}, '
-                    f'pred_diff: {obj_disp_pred_diff / cnt:.5f}, cnt: {cnt}\n')
+                    f'rank_score: {obj_disp_rank_score / cnt:.5f}, '
+                    f'pred_diff: {obj_disp_pred_diff / cnt:.5f}, cnt: {disp_cnt}\n')
 
 
 
@@ -595,7 +644,7 @@ def eval(checkpoint_path):
             'goal_idx': goal_idx
         }
 
-    valid_loader = DataLoader(dataset=val_dataset, batch_size=1, collate_fn=make_collate_batch, num_workers=0)
+    valid_loader = DataLoader(dataset=val_dataset, batch_size=1, collate_fn=make_collate_batch, num_workers=4)
 
     if use_gpu:
         print("Currently using GPU {}".format(args.gpu))
@@ -640,16 +689,19 @@ def eval(checkpoint_path):
 
     obj_results = {}
     for obj_name in goal_obj_names:
-        obj_results[obj_name] = {'count': 0, 'disp_value_acc': 0 , 'disp_rank_acc_3': 0, 'disp_rank_acc_1': 0, 'disp_pred_diff': 0}
+        obj_results[obj_name] = {'count': 0, 'disp_value_acc': 0 , 'disp_rank_acc_3': 0, 'disp_rank_acc_1': 0,
+                                 'disp_rank_score': 0, 'disp_pred_diff': 0}
 
     model.eval()
     with torch.no_grad():
         disp_loss = 0.0
         disp_value_loss = 0.0
         disp_adj_loss = 0.0
+        disp_sign_loss = 0.0
         disp_value_acc = 0.0
         disp_rank_acc_3 = 0.0
         disp_rank_acc_1 = 0.0
+        disp_rank_score = 0.0
         disp_pred_diff = 0.0
         cnt_in_val = 0
         start_time = time.time()
@@ -688,11 +740,15 @@ def eval(checkpoint_path):
             if torch.isnan(adj_loss):
                 adj_loss = torch.tensor(0.0).cuda()
 
-            loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss
+            sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]],
+                                          node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
+
+            loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss + args.sign_loss_cf * sign_loss
 
             disp_loss += loss.item()
             disp_value_loss += args.value_loss_cf * value_loss.item()
             disp_adj_loss += args.adj_loss_cf * adj_loss.item()
+            disp_sign_loss += args.sign_loss_cf * sign_loss.item()
 
             value_acc = torch.mean(torch.where(abs(pred_dist - node_goal_dists) <= 0.1, 1, 0).float())
             cand_nodes = 1 - info_features[:, 0]
@@ -710,12 +766,18 @@ def eval(checkpoint_path):
             else:
                 rank_acc_3 = float(torch.argmax(pred_dist[cand_nodes > 0], dim=0) in topk_list)
                 rank_acc_1 = float(torch.argmax(pred_dist[cand_nodes > 0], dim=0) in topk_list[0])
+
+            oracle_rank = torch.topk(node_goal_dists[cand_nodes > 0], int(torch.sum(cand_nodes)), dim=0).indices[:, 0]
+            rank_score = 1 - float((torch.where(oracle_rank == torch.argmax(pred_dist[cand_nodes > 0], dim=0))[0]) / torch.sum(cand_nodes))
+
+
             pred_diff = np.linalg.norm(data['node_pose'][torch.argmax(pred_dist)] - data['node_pose'][torch.argmax(node_goal_dists)])
 
             disp_value_acc += value_acc
             disp_rank_acc_3 += rank_acc_3
             disp_rank_acc_1 += rank_acc_1
             disp_pred_diff += pred_diff
+            disp_rank_score += rank_score
 
             for i in range(len(goal_obj_names)):
                 if goal_idx[0] == i:
@@ -723,6 +785,7 @@ def eval(checkpoint_path):
                     obj_results[goal_obj_names[i]]['disp_value_acc'] += value_acc
                     obj_results[goal_obj_names[i]]['disp_rank_acc_3'] += rank_acc_3
                     obj_results[goal_obj_names[i]]['disp_rank_acc_1'] += rank_acc_1
+                    obj_results[goal_obj_names[i]]['disp_rank_score'] += rank_score
                     obj_results[goal_obj_names[i]]['disp_pred_diff'] += pred_diff
 
             node_goal_dists_cnt = np.squeeze(np.array(node_goal_dists.cpu()) * 10, axis=1).astype(int)
@@ -740,9 +803,9 @@ def eval(checkpoint_path):
 
     print('Finished evaluation')
     print(
-        f'Val loss: {disp_loss / cnt_in_val:.5f}, value_loss: {disp_value_loss / cnt_in_val:.5f}, adj_loss: {disp_adj_loss / cnt_in_val:.5f},'
-        f'value_acc: {disp_value_acc / (cnt_in_val):.5f}, rank_acc_3: {disp_rank_acc_3 / (cnt_in_val):.5f}, rank_acc_1: {disp_rank_acc_1 / (cnt_in_val):.5f},'
-        f' pred_diff: {disp_pred_diff / (cnt_in_val):.5f}')
+        f'Val loss: {disp_loss / cnt_in_val:.5f}, value_loss: {disp_value_loss / cnt_in_val:.5f}, adj_loss: {disp_adj_loss / cnt_in_val:.5f}, sign_loss: {disp_sign_loss / cnt_in_val:.5f},'
+        f'value_acc: {disp_value_acc / (cnt_in_val):.5f}, rank_acc_3: {disp_rank_acc_3 / (cnt_in_val):.5f}, rank_acc_1: {disp_rank_acc_1 / (cnt_in_val):.5f}, '
+        f'rank_score: {disp_rank_score / cnt_in_val:.5f}, pred_diff: {disp_pred_diff / (cnt_in_val):.5f}')
 
     for obj_name in goal_obj_names:
         cnt = obj_results[obj_name]['count']
@@ -750,21 +813,23 @@ def eval(checkpoint_path):
         obj_disp_value_acc = obj_results[obj_name]['disp_value_acc']
         obj_disp_rank_acc_3 = obj_results[obj_name]['disp_rank_acc_3']
         obj_disp_rank_acc_1 = obj_results[obj_name]['disp_rank_acc_1']
+        obj_disp_rank_score = obj_results[obj_name]['disp_rank_score']
         obj_disp_pred_diff = obj_results[obj_name]['disp_pred_diff']
         print(f'     {obj_name} - value_acc: {obj_disp_value_acc / cnt:.5f}, '
               f'rank_acc_3: {obj_disp_rank_acc_3 / cnt:.5f}, '
               f'rank_acc_1: {obj_disp_rank_acc_1 / cnt:.5f}, '
+              f'rank_score: {obj_disp_rank_score / cnt:.5f}, '
               f'pred_diff: {obj_disp_pred_diff / cnt:.5f}, cnt: {cnt}')
 
 
-    print('true_value_cnt: ', true_value_cnt)
-    print('pred_value_cnt: ', pred_value_cnt)
+    print('true_value_cnt: ', true_value_cnt.astype(int))
+    print('pred_value_cnt: ', pred_value_cnt.astype(int))
     print(args)
 
 
 if __name__ == '__main__':
 
-    main()
+    # main()
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0610/0610_v2_1_use_cm_maxdist30.0_lr0.001/model_25.pth')
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0616/0616_combv2_modelv2_1_use_cm_maxdist30.0_lr0.0001/model_20.pth')
     # eval('/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0701/0701_relpose_stepbystep_pano_goalscore_use_cm_maxdist30.0_lr0.01/model_20.pth')
@@ -772,3 +837,6 @@ if __name__ == '__main__':
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0706/0706_mp3d21_pano_goalscore_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0712/0712_mp3d21_front_goalscore_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0716/0716_mp3d21_panov2_goalscore_wadjmtx_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
+    # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-19/15-28_mp3d21_panov2_goalscore_wadjmtx_adjloss0.0_use_cm_maxdist30.0_lr0.01/model_10.pth')
+    # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-21/02-12_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_100.0_use_cm_maxdist30.0_lr0.0001/model_10.pth')
+    eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-20/20-34_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_10.0_use_cm_maxdist30.0_lr0.001/model_10.pth')
