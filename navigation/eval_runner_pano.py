@@ -142,7 +142,7 @@ class Runner:
         self.edge_range = args.edge_range
         self.last_mile_range = args.last_mile_range
         self.goal_det_dist = args.success_dist - args.move_forward
-        self.goal_obs_consistency_th = 1  # number of time steps that the goal is visible for the goal to be considered as correctly detected
+        self.goal_obs_consistency_th = args.goal_obs_count  # number of time steps that the goal is visible for the goal to be considered as correctly detected
 
         self.vo_height = args.front_height
         self.vo_width = args.front_width
@@ -1710,7 +1710,7 @@ class Runner:
                 # return to the previous node
                 cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
                 temp_goal_node = self.graph_map.get_node_by_id(cur_node_id)
-                temp_goal_position = self.cur_node.pos
+                temp_goal_position = temp_goal_node.pos
             else:
                 subgoal_node = self.get_next_subgoal_using_graph(self.cur_node)
                 if subgoal_node == None:

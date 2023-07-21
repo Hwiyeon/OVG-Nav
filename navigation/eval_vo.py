@@ -22,7 +22,7 @@ parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=3)
 parser.add_argument("--data_split_max", type=int, default=11)
-parser.add_argument("--save_dir", type=str, default="/home/hwing/Dataset/cm_graph/{}/{}/0630_vo/actrot30_nobias_1obs_nocmsoftmax_pano")
+parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/0630_vo/actrot30_nobias_1obs_nocmsoftmax_pano")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -32,25 +32,26 @@ parser.add_argument("--use_oracle", type=bool, default=False)
 
 
 ## observation configs ##
-parser.add_argument("--front_width", type=int, default=320)
-parser.add_argument("--front_height", type=int, default=240)
+parser.add_argument("--front_width", type=int, default=640)
+parser.add_argument("--front_height", type=int, default=480)
 parser.add_argument("--front_hfov", type=int, default=70)
 
 parser.add_argument("--add_panoramic_sensor", type=bool, default=True)
 parser.add_argument("--panoramic_turn_angle", type=int, default=90)
-parser.add_argument("--width", type=int, default=128)
-parser.add_argument("--height", type=int, default=128)
+parser.add_argument("--width", type=int, default=256)
+parser.add_argument("--height", type=int, default=256)
 parser.add_argument("--hfov", type=int, default=90)
-parser.add_argument("--pano_width", type=int, default=512)
-parser.add_argument("--pano_height", type=int, default=128)
+parser.add_argument("--pano_width", type=int, default=1024)
+parser.add_argument("--pano_height", type=int, default=256)
 parser.add_argument("--sensor_height", type=float, default=0.88)
+parser.add_argument("--goal_obs_count", type=int, default=3)
 
 parser.add_argument("--semantic_sensor", type=bool, default=False)
 
 
 ## agent configs ##
 parser.add_argument("--max_frames", type=int, default=500)
-parser.add_argument("--sensing_range", type=float, default=10.0)
+parser.add_argument("--sensing_range", type=float, default=5.0)
 parser.add_argument("--move_forward", type=float, default=0.25)
 parser.add_argument("--edge_range", type=float, default=1.0)
 parser.add_argument("--last_mile_range", type=float, default=5.0)
@@ -73,23 +74,23 @@ parser.add_argument("--map_resolution", type=int, default=5)
 
 
 ## model configs ##
-parser.add_argument("--detection_model", type=str, default="/home/hwing/Projects/offline_objgoal/modules/detector")
-parser.add_argument("--free_space_model", type=str, default="/home/hwing/Projects/offline_objgoal/modules/free_space_model/ckpts/split_lr0.001_0227_range_1.0/best_model_1.pth")
+parser.add_argument("--detection_model", type=str, default="/home/hwing/Projects/OVG-Nav/modules/detector")
+parser.add_argument("--free_space_model", type=str, default="/home/hwing/Projects/OVG-Nav/modules/free_space_model/ckpts/split_lr0.001_0227_range_1.0/best_model_1.pth")
 parser.add_argument("--CLIP_model", type=str, default="ViT-B/32")
-parser.add_argument("--COMET_model", type=str, default="/home/hwing/Projects/offline_objgoal/modules/comet_relation/comet-atomic_2020_BART")
+parser.add_argument("--COMET_model", type=str, default="/home/hwing/Projects/OVG-Nav/modules/comet_relation/comet-atomic_2020_BART")
 
 # parser.add_argument("--value_model", type=str, default='/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0610/0610_v2_1_use_cm_maxdist30.0_lr0.001/model_25.pth')
 # parser.add_argument("--value_model", type=str, default='/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0616/0616_combv2_modelv2_1_use_cm_maxdist30.0_lr0.0001/model_20.pth')
-parser.add_argument("--value_model", type=str, default='/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0623/0623_no_rot_bias_step_by_step_v2_load_v3_modelv2_1_use_cm_maxdist30.0_lr0.001/model_20.pth')
+parser.add_argument("--value_model", type=str, default='/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-21/02-12_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_100.0_use_cm_maxdist30.0_lr0.0001/model_10.pth')
 parser.add_argument('--vis_feat_dim', default=512, type=int)
 parser.add_argument('--use_cm_score', default=True, type=bool)
 
 
 ## VO model configs ##
 parser.add_argument("--use_vo", type=bool, default=False)
-parser.add_argument('--max_depth', type=float, default=10., help='maximum depth value')
+parser.add_argument('--max_depth', type=float, default=5., help='maximum depth value')
 parser.add_argument('--min_depth', type=float, default=0.1, help='minimum depth value')
-parser.add_argument('--KM_resize', type=int, nargs='+', default=[320, 240],
+parser.add_argument('--KM_resize', type=int, nargs='+', default=[640, 480],
         help='Resize the input image before running inference. If two numbers, '
              'resize to the exact dimensions, if one number, resize the max '
              'dimension, if -1, do not resize')
