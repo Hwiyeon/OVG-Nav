@@ -2,6 +2,10 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+import torch
+
 
 import habitat_sim
 import habitat_sim.agent
@@ -9,7 +13,8 @@ import habitat_sim.bindings as hsim
 import numpy as np
 import magnum as mn
 import pickle
-import os
+
+import navigation.configs.custom_redwood_depth_noise_model
 
 
 default_sim_settings = {
@@ -162,8 +167,9 @@ def make_cfg(settings):
             sensor_subtype=habitat_sim.SensorSubType.PINHOLE,
         )
         if "noisy_depth" in settings and settings["noisy_depth"]:
-            depth_sensor_spec.noise_model = "RedwoodDepthNoiseModel"
-            depth_sensor_spec.noise_model_kwargs = dict(noise_multiplier=settings["noisy_depth_multiplier"])
+            depth_sensor_spec.noise_model = "RedwoodDepthNoiseModel_custom"
+            depth_sensor_spec.noise_model_kwargs = dict(gpu_device_id=0,
+                                                        noise_multiplier=settings["noisy_depth_multiplier"])
         sensor_specs.append(depth_sensor_spec)
 
     if settings["semantic_sensor"]:
@@ -288,19 +294,19 @@ def make_cfg(settings):
                 "orientation": [0, - r * np.pi / 180, 0],
             }
 
-            pano_sensors[f"depth_{r}"] = {
-                "sensor_type": habitat_sim.SensorType.DEPTH,
-                "resolution": [settings["height"], settings["width"]],
-                "position": [0.0, settings["sensor_height"], 0.0],
-                "orientation": [0, - r * np.pi / 180, 0],
-            }
-
-            pano_sensors[f"semantic_{r}"] = {
-                "sensor_type": habitat_sim.SensorType.SEMANTIC,
-                "resolution": [settings["height"], settings["width"]],
-                "position": [0.0, settings["sensor_height"], 0.0],
-                "orientation": [0, - r * np.pi / 180, 0],
-            }
+            # pano_sensors[f"depth_{r}"] = {
+            #     "sensor_type": habitat_sim.SensorType.DEPTH,
+            #     "resolution": [settings["height"], settings["width"]],
+            #     "position": [0.0, settings["sensor_height"], 0.0],
+            #     "orientation": [0, - r * np.pi / 180, 0],
+            # }
+            #
+            # pano_sensors[f"semantic_{r}"] = {
+            #     "sensor_type": habitat_sim.SensorType.SEMANTIC,
+            #     "resolution": [settings["height"], settings["width"]],
+            #     "position": [0.0, settings["sensor_height"], 0.0],
+            #     "orientation": [0, - r * np.pi / 180, 0],
+            # }
 
 
         # create sensor specifications
@@ -386,8 +392,10 @@ def make_cfg(settings):
         #     scene_node.rotate_local(mn.Deg(rotate_angle), rotation_ax)
         #     # Calling normalize is needed after rotating to deal with machine precision errors
         #     scene_node.rotation = scene_node.rotation.normalized()
-
+        import os
+        os.environ["OMP_NUM_THREADS"] = "1"
         from habitat_sim.agent.controls.pyrobot_noisy_controls import _noisy_action_impl, pyrobot_noise_models
+        torch.set_num_threads(1)
 
         @habitat_sim.registry.register_move_fn(body_action=True)
         class NoisyForward(habitat_sim.SceneNodeControl):
