@@ -341,18 +341,18 @@ class Runner:
     def panoramic_obs(self, obs, semantic=False):
 
         rgb_panoramic = np.zeros([self.pano_height, self.pano_width, 3]).astype(int)
-        depth_panoramic = np.zeros([self.pano_height, self.pano_width])
+        # depth_panoramic = np.zeros([self.pano_height, self.pano_width])
         if semantic:
             semantic_panoramic = np.zeros([self.pano_height, self.pano_width]).astype(int)
 
         for i, rot in enumerate([ '270', '0', '90', '180']):
 
             rgb_panoramic[:, i * self.width:(i + 1) * self.width, :] = obs[f'rgb_{rot}'][:, :, :3]   # 320 - 320* np.tan(30/180*np.pi) / np.tan(35/180*np.pi) = 56
-            depth_panoramic[:, i * self.width:(i + 1) * self.width] = obs[f'depth_{rot}']
+            # depth_panoramic[:, i * self.width:(i + 1) * self.width] = obs[f'depth_{rot}']
 
         return {
             'rgb_panoramic': rgb_panoramic,
-            'depth_panoramic': depth_panoramic
+            # 'depth_panoramic': depth_panoramic
         }
 
 
@@ -1259,8 +1259,8 @@ class Runner:
             # combined_score = 0.5 * softmax_cm_scores + 0.5 * dist_scores
 
             obj_scores = np.array(obj_scores)
-            combined_score = obj_scores + 0.1 * dist_scores
-            # combined_score = obj_scores
+            # combined_score = obj_scores + 0.1 * dist_scores
+            combined_score = obj_scores
             node_idx = np.argmax(combined_score)
             cand_node = self.graph_map.get_node_by_id(ids[node_idx])
 

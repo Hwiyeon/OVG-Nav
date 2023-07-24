@@ -1,3 +1,5 @@
+import os
+os.environ["OMP_NUM_THREADS"] = '1'
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -453,6 +455,7 @@ class SemanticPredRedNet:
         with torch.no_grad():
             batched_depth = self.normalize_depth(batched_depth)
             batched_rgb = self.normalize_rgb(batched_rgb)
+            torch.set_num_threads(1)
             predictions = self.model(batched_rgb, batched_depth)
             # Convert predictions to probabilities
             predictions = F.softmax(predictions, dim=1)

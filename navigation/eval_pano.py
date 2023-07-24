@@ -12,7 +12,7 @@ import argparse
 parser = argparse.ArgumentParser()
 
 ## eval configs ##
-parser.add_argument("--gpu_list", type=str, default="0")
+parser.add_argument("--gpu_list", type=str, default="1")
 parser.add_argument("--model_gpu", type=str, default="0")
 parser.add_argument("--sim_gpu", type=str, default="0")
 # parser.add_argument("--data", type=str, default="gibosn")
@@ -22,7 +22,7 @@ parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=0)
 parser.add_argument("--data_split_max", type=int, default=11)
-parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/0717_21/actrot30_1obs_pano_cometscore_adj0.5_wadj_connected")
+parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/0721_21/actrot30_1obs_pano_cometscore_adjv2100_wadj_connected_test")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")

@@ -304,18 +304,18 @@ class Runner:
     def panoramic_obs(self, obs, semantic=False):
 
         rgb_panoramic = np.zeros([self.pano_height, self.pano_width, 3]).astype(int)
-        depth_panoramic = np.zeros([self.pano_height, self.pano_width])
+        # depth_panoramic = np.zeros([self.pano_height, self.pano_width])
         if semantic:
             semantic_panoramic = np.zeros([self.pano_height, self.pano_width]).astype(int)
 
         for i, rot in enumerate([ '270', '0', '90', '180']):
 
             rgb_panoramic[:, i * self.width:(i + 1) * self.width, :] = obs[f'rgb_{rot}'][:, :, :3]   # 320 - 320* np.tan(30/180*np.pi) / np.tan(35/180*np.pi) = 56
-            depth_panoramic[:, i * self.width:(i + 1) * self.width] = obs[f'depth_{rot}']
+            # depth_panoramic[:, i * self.width:(i + 1) * self.width] = obs[f'depth_{rot}']
 
         return {
             'rgb_panoramic': rgb_panoramic,
-            'depth_panoramic': depth_panoramic
+            # 'depth_panoramic': depth_panoramic
         }
 
 
@@ -792,6 +792,7 @@ class Runner:
     def get_vo_relative_camera_pose(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, initial_guess=None):
         if initial_guess is None:
             initial_guess = self.vo_model.get_extrinsic_guess_from_action(action)
+        torch.set_num_threads(1)
         est_pos_diff, est_rot_diff, keypoint_est_success = self.vo_model.get_relative_camera_pose(
                                                             prev_rgb, prev_depth, curr_rgb, initial_guess, rot_vec=True)
 
@@ -979,7 +980,7 @@ class Runner:
         # for global coordinate
         # turn left = positive angle
         # free cand angle idx --> right side is positive
-
+        torch.set_num_threads(1)
         free_cand_nodes = self.free_space_model.predict_free_space(pano_rgb)
         pano_split_images = self.get_dirc_imgs_from_pano(pano_rgb)
 
@@ -1084,6 +1085,7 @@ class Runner:
                                     node_info_features.to(f'cuda:{self.args.model_gpu}'), \
                                     adj_mtx.to(f'cuda:{self.args.model_gpu}')
 
+        torch.set_num_threads(1)
         object_value = self.value_model(node_features, node_goal_features, node_info_features, adj_mtx)
         object_value = object_value.cpu().detach().numpy()
 
@@ -1140,8 +1142,8 @@ class Runner:
             # combined_score = 0.5 * softmax_cm_scores + 0.5 * dist_scores
 
             obj_scores = np.array(obj_scores)
-            combined_score = obj_scores + 0.1 * dist_scores
-            # combined_score = obj_scores
+            # combined_score = obj_scores + 0.1 * dist_scores
+            combined_score = obj_scores
             node_idx = np.argmax(combined_score)
             cand_node = self.graph_map.get_node_by_id(ids[node_idx])
 
@@ -1173,6 +1175,7 @@ class Runner:
             obj_min_pixel = None
             closest_obj_id = None
             rgb = rgb[:,:,:3]
+            torch.set_num_threads(1)
             if vis:
                 img, pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(rgb, show=True)
             else:
@@ -1216,6 +1219,7 @@ class Runner:
 
             in_rgb, in_depth = torch.from_numpy(in_rgb).float().to(f"cuda:{self.args.model_gpu}"), torch.from_numpy(in_depth).float().to(f"cuda:{self.args.model_gpu}")
             in_rgb, in_depth = in_rgb.unsqueeze(0), in_depth.unsqueeze(0)
+            torch.set_num_threads(1)
             pred = self.detector.get_predictions(in_rgb, in_depth)[0]
 
             pred_mask = pred[self.goal_class_idx].cpu().numpy().astype(np.uint8)
@@ -1664,6 +1668,7 @@ class Runner:
                 prev_rgb = prev_obs['color_sensor'][:, :, :3]
                 prev_depth = prev_obs['depth_sensor']
 
+                torch.set_num_threads(1)
                 obs = self._sim.step(action)
                 self.path_length += self.dist_euclidean_floor(prev_position, self._sim.agents[0].get_state().position)
                 self.action_step += 1
@@ -1838,7 +1843,7 @@ class Runner:
             for i in range(len(pano_images)):
                 dirc_head_idx = (cur_heading_idx -5 + i) % self.rot_num
                 self.graph_map.update_node_clip_feat(self.cur_node, pano_image_feat[i], dirc_head_idx)
-
+                torch.set_num_threads(1)
                 if self.cm_type == 'comet':
                     goal_cm_scores, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat,
                                                                                  pano_image_feat[i], feat=True,
