@@ -306,6 +306,8 @@ class GraphMap(object):
 
     def delete_edge(self, node1, node2):
         edge_ids = [edge for edge in self.edge_ids if edge == (node1.nodeid, node2.nodeid) or edge == (node2.nodeid, node1.nodeid)]
+        if len(edge_ids) == 0:
+            return
         self.edge_ids.remove(edge_ids[0])
         self.edge_ids.remove(edge_ids[1])
         remove_list = []

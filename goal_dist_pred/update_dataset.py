@@ -8,7 +8,7 @@ import argparse
 
 parser = argparse.ArgumentParser("Pytorch code for unsupervised video summarization with REINFORCE")
 
-parser.add_argument("--run_type", type=str, default="train")
+parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=9)
 parser.add_argument("--data_split_max", type=int, default=10)
 
@@ -134,7 +134,7 @@ def main_0():
                 nodes = [graph_data.node_by_id[id] for id in graph_data.node_by_id.keys()]
 
                 cand_weight = torch.Tensor(graph_data.goal_cm_info['cand_category_room_score'][:5])
-
+                min_obj_dist = np.inf
                 for i in range(len(nodes)):
                     nodeid = nodes[i].nodeid
 
@@ -167,7 +167,8 @@ def main_0():
                     # mask = adj_mtx > 0
                     # adj_mtx[mask] = 1
 
-
+                    # if np.min(nodes[i].dist_to_objs) < min_obj_dist:
+                    #     min_obj_dist = np.min(nodes[i].dist_to_objs)
                     # node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5])
                     # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
                     #                                         dim=1) * cand_weight  ## weighted by room category
@@ -194,9 +195,11 @@ def main_0():
                 #     p1 = np.array(graph_data.node_by_id[edge[1]].pos)
                 #     adj_mtx_vec[int(edge[0]), int(edge[1])] = p1 - p0
                 # graph_data.adj_mtx_vec = adj_mtx_vec
+
+
                 with open(f'{data}/graph.pkl', 'wb') as f:
                     pickle.dump(graph_data, f)
-
+                # print(min_obj_dist)
             except KeyboardInterrupt:
                 print("KeyboardInterrupt")
                 break

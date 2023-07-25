@@ -239,14 +239,15 @@ class Runner:
             video.write(depth_obs)
         video.release()
 
-    def save_video(self, frame_list, save_dir):
+    def save_video(self, frame_list, save_dir, epi_name):
         # data_dir = f"{save_dir}/{self.data_type}/{env_name}/{env_name}_{idx:04d}"
         if not os.path.exists(save_dir): os.makedirs(save_dir)
 
         width = np.shape(frame_list[0])[1]
         height = np.shape(frame_list[0])[0]
 
-        video = cv2.VideoWriter(f'{save_dir}/graph.avi', cv2.VideoWriter_fourcc(*'XVID'), 5,
+
+        video = cv2.VideoWriter(f'{save_dir}/{epi_name}.avi', cv2.VideoWriter_fourcc(*'XVID'), 5,
                                 (width, height))
         for image in frame_list:
             image = cv2.cvtColor((image[:, :, :3] / 255.).astype(np.float32), cv2.COLOR_RGB2BGR)
@@ -467,33 +468,33 @@ class Runner:
             for goal_idx, obj_name in enumerate(self.goal_obj_names):
                 level_map[obj_name] = np.copy(self.map[lv])
 
-                # ## --- draw goal object bboxes --- ##
-                # shapes = np.zeros_like(self.map[lv], np.uint8)
-                # for obj in self.env_goal_obj_info:
-                #     if obj['category'] == goal_idx and int(obj['level']) == lv:
-                #         grid_bbox = self.get_bbox_from_pos_size(obj['position'], obj['sizes'], lv)
-                #         grid_bbox = grid_bbox.tolist()
-                #
-                #         cv2.rectangle(shapes, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (255, 128, 0), -1)
-                # alpha = 0.3
-                # mask = np.repeat(np.sum(shapes, axis=2).astype(bool)[:, :, np.newaxis], 3, axis=2)
-                # level_map[obj_name][mask] = cv2.addWeighted(level_map[obj_name], alpha, shapes, 1 - alpha, 0)[mask]
+                ## --- draw goal object bboxes --- ##
+                shapes = np.zeros_like(self.map[lv], np.uint8)
+                for obj in self.env_goal_obj_info:
+                    if obj['category'] == goal_idx and int(obj['level']) == lv:
+                        grid_bbox = self.get_bbox_from_pos_size(obj['position'], obj['sizes'], lv)
+                        grid_bbox = grid_bbox.tolist()
 
-                # ## --- draw viewpoints --- ##
-                # shapes = np.zeros_like(self.map[lv], np.uint8)
-                # for pos in self.env_class_goal_view_point_level[obj_name][str(lv)]:
-                #     ## view points in dataset ##
-                #     node_grid = self.get_vis_grid_pose(pos, lv)
-                #     shapes = cv2.circle(shapes, node_grid, 3, (255, 255, 0), -1)
-                # alpha = 0.7
-                # mask = np.repeat(np.sum(shapes, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
-                # level_map[obj_name][mask] = cv2.addWeighted(level_map[obj_name], alpha, shapes, 1 - alpha, 0)[mask]
+                        cv2.rectangle(shapes, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (255, 128, 0), -1)
+                alpha = 0.3
+                mask = np.repeat(np.sum(shapes, axis=2).astype(bool)[:, :, np.newaxis], 3, axis=2)
+                level_map[obj_name][mask] = cv2.addWeighted(level_map[obj_name], alpha, shapes, 1 - alpha, 0)[mask]
 
-                ## --- draw goal object centers --- ##
-                for pos in np.array([obj['position'] for obj in self.env_goal_obj_info if (obj['category'] == goal_idx and int(obj['level']) == lv)]):
-                    ## goal object positions in dataset
+                ## --- draw viewpoints --- ##
+                shapes = np.zeros_like(self.map[lv], np.uint8)
+                for pos in self.env_class_goal_view_point_level[obj_name][str(lv)]:
+                    ## view points in dataset ##
                     node_grid = self.get_vis_grid_pose(pos, lv)
-                    level_map[obj_name] = cv2.circle(level_map[obj_name], node_grid, 10, (255, 200, 0), -1)
+                    shapes = cv2.circle(shapes, node_grid, 4, (255, 255, 0), -1)
+                alpha = 0.6
+                mask = np.repeat(np.sum(shapes, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
+                level_map[obj_name][mask] = cv2.addWeighted(level_map[obj_name], alpha, shapes, 1 - alpha, 0)[mask]
+
+                # ## --- draw goal object centers --- ##
+                # for pos in np.array([obj['position'] for obj in self.env_goal_obj_info if (obj['category'] == goal_idx and int(obj['level']) == lv)]):
+                #     ## goal object positions in dataset
+                #     node_grid = self.get_vis_grid_pose(pos, lv)
+                #     level_map[obj_name] = cv2.circle(level_map[obj_name], node_grid, 10, (255, 200, 0), -1)
 
             self.goal_map.append(level_map)
 
@@ -506,15 +507,15 @@ class Runner:
         node_list = list(graph_map.node_by_id.values())
 
         for edge in list(graph_map.edges):
-            if not edge.draw:
-                pos1 = np.array(edge.nodes[0].pos) if edge.nodes[0].vis_pos is None else np.array(edge.nodes[0].vis_pos)
-                pos2 = np.array(edge.nodes[1].pos) if edge.nodes[1].vis_pos is None else np.array(edge.nodes[1].vis_pos)
-                node_grid1 = self.get_vis_grid_pose(pos1 + bias_position, self.curr_level)
-                node_grid2 = self.get_vis_grid_pose(pos2 + bias_position, self.curr_level)
-                # node_grid1 = self.get_vis_grid_pose(np.array(edge.nodes[0].pos) + bias_position, self.curr_level)
-                # node_grid2 = self.get_vis_grid_pose(np.array(edge.nodes[1].pos) + bias_position, self.curr_level)
-                vis_map = cv2.line(vis_map, node_grid1, node_grid2, (0, 64, 64), 5)
-                edge.draw = True
+            # if not edge.draw:
+            pos1 = np.array(edge.nodes[0].pos) if edge.nodes[0].vis_pos is None else np.array(edge.nodes[0].vis_pos)
+            pos2 = np.array(edge.nodes[1].pos) if edge.nodes[1].vis_pos is None else np.array(edge.nodes[1].vis_pos)
+            node_grid1 = self.get_vis_grid_pose(pos1 + bias_position, self.curr_level)
+            node_grid2 = self.get_vis_grid_pose(pos2 + bias_position, self.curr_level)
+            # node_grid1 = self.get_vis_grid_pose(np.array(edge.nodes[0].pos) + bias_position, self.curr_level)
+            # node_grid2 = self.get_vis_grid_pose(np.array(edge.nodes[1].pos) + bias_position, self.curr_level)
+            vis_map = cv2.line(vis_map, node_grid1, node_grid2, (0, 64, 64), 5)
+            edge.draw = True
 
         # cm_scores = []
         # for node in node_list:
@@ -578,10 +579,10 @@ class Runner:
 
         return vis_map
 
-    def vis_pos_on_topdown_map(self, pos, lv, vis_map=None, color=(255, 0, 0)):
+    def vis_pos_on_topdown_map(self, pos, lv, vis_map=None, color=(255, 0, 0), copy=True):
         if vis_map is None:
             vis_map = self.map[self.curr_level].copy()
-        else:
+        elif copy:
             vis_map = vis_map.copy()
         node_grid = self.get_vis_grid_pose(pos, lv)
         # vis_map = cv2.circle(vis_map, node_grid, 10, (0, 255, 0), -1)
@@ -720,7 +721,7 @@ class Runner:
                                       vis_goal_obj_score=None, vis_obj=None,
                                       visited_positions=None):
         # vis_map = self.map.copy()
-        vis_map = self.cur_graph_map
+        vis_map = np.zeros_like(self.base_map)
         # if vis_obj is not None:
         #     vis_map = self.vis_topdown_obj_map(vis_map, vis_obj)
 
@@ -739,15 +740,16 @@ class Runner:
                                                 # curr_goal_position=curr_goal_position,
                                                 visited_positions=visited_positions)
 
-        self.cur_graph_map = vis_map
+        self.cur_graph_map = vis_map.copy()
         # mask = self.cur_graph_map.astype(bool)
         mask = np.repeat(np.sum(self.cur_graph_map, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
-        self.base_map[mask] = cv2.addWeighted(self.base_map, 0., self.cur_graph_map, 1.0, 0)[mask]
+        vis_map[np.logical_not(mask)] = cv2.addWeighted(self.base_map, 1.0, self.cur_graph_map, 0.0, 0)[np.logical_not(mask)]
 
         if curr_position is not None:
-            vis_map = self.vis_pos_on_topdown_map(curr_position + bias_position, self.curr_level, self.base_map)
+            # vis_map = self.vis_pos_on_topdown_map(curr_position + bias_position, self.curr_level, self.base_map)
+            vis_map = self.vis_pos_on_topdown_map(curr_position + bias_position, self.curr_level, vis_map, copy=False)
         if curr_goal_position is not None:
-            vis_map = self.vis_pos_on_topdown_map(curr_goal_position + bias_position, self.curr_level, vis_map, color=(255, 255, 0))
+            vis_map = self.vis_pos_on_topdown_map(curr_goal_position + bias_position, self.curr_level, vis_map, color=(255, 255, 0), copy=False)
 
 
 
@@ -1212,7 +1214,7 @@ class Runner:
         return object_value
 
 
-    def get_next_subgoal_using_graph(self, cur_node):
+    def get_next_subgoal_using_graph(self, cur_node, include_visited=False):
         max_score = 0
         min_dist = 9999
         cand_node = None
@@ -1225,7 +1227,11 @@ class Runner:
         true_score = []
         object_value = self.get_value_graph()
 
-        for i, id in enumerate(self.graph_map.candidate_node_ids):
+        node_list = self.graph_map.candidate_node_ids
+        if include_visited:
+            node_list = node_list + self.graph_map.visited_node_ids
+
+        for i, id in enumerate(node_list):
             node = self.graph_map.get_node_by_id(id)
             ids.append(id)
 
@@ -1235,7 +1241,7 @@ class Runner:
             # dist score
             temp_path, temp_path_length = self.get_shortest_path(cur_node.nodeid, id, self.graph_map.adj_mtx)
             if len(temp_path) == 0:
-                dist_score = -10
+                dist_score = -1000
             else:
                 dist_score = max(1 - temp_path_length / max_dist, 0)
             dist_scores.append(dist_score)
@@ -1251,7 +1257,7 @@ class Runner:
 
 
         if self.use_oracle:
-            return cand_node
+            return cand_node, min_dist
         else:
             dist_scores = np.array(dist_scores)
             # cm_scores = np.array(cm_scores)
@@ -1259,12 +1265,12 @@ class Runner:
             # combined_score = 0.5 * softmax_cm_scores + 0.5 * dist_scores
 
             obj_scores = np.array(obj_scores)
-            # combined_score = obj_scores + 0.1 * dist_scores
-            combined_score = obj_scores
+            combined_score = obj_scores + 0.05 * dist_scores
+            # combined_score = obj_scores
             node_idx = np.argmax(combined_score)
             cand_node = self.graph_map.get_node_by_id(ids[node_idx])
 
-            return cand_node
+            return cand_node, combined_score[node_idx]
 
 
     def check_close_goal(self, pos, goal_position, th=1.0):
@@ -1516,7 +1522,7 @@ class Runner:
         while path[-1] != start_node_id:
             path.append(predecessors[start_node_id, path[-1]])
             if path[-1] == -9999:
-                return []
+                return [], []
         path.reverse()
 
         path = [str(i) for i in path]
@@ -1704,7 +1710,7 @@ class Runner:
         while True:
             if self.end_episode:
                 return
-            if len(self.graph_map.candidate_node_ids) <= 2:
+            if len(self.graph_map.candidate_node_ids) == 0:
                 self.do_panoramic_action(self.cur_node)
             if invalid_edge:
                 # return to the previous node
@@ -1712,7 +1718,9 @@ class Runner:
                 temp_goal_node = self.graph_map.get_node_by_id(cur_node_id)
                 temp_goal_position = temp_goal_node.pos
             else:
-                subgoal_node = self.get_next_subgoal_using_graph(self.cur_node)
+                subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node)
+                if object_value < 0:
+                    subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node, include_visited=True)
                 if subgoal_node == None:
                     return
 
@@ -2301,13 +2309,15 @@ class Runner:
         for goal in self.dataset['episodes']:
             # if goal['info']['geodesic_distance'] < 1.0:
             #     continue
-            if self.args.dataset == 'mp3d' or self.args.dataset == 'hm3d':
-                if abs(goal['start_position'][1] - goal['info']['best_viewpoint_position'][1]) > 1.0:
-                    continue
+            # if self.args.dataset == 'mp3d' or self.args.dataset == 'hm3d':
+            #     if abs(goal['start_position'][1] - goal['info']['best_viewpoint_position'][1]) > 1.0:
+            #         continue
             if goal['object_category'] in self.goal_obj_names:
                 valid_traj_list.append(goal)
                 goal_traj_nums[self.goal_obj_names.index(goal['object_category'])] += 1
                 goal_category = goal['object_category']
+            else:
+                continue
 
 
         print("Get env information done")
@@ -2363,20 +2373,20 @@ class Runner:
         max_data_num = len(valid_traj_list) // interval
 
         ## -- floor plan -- ##
-        if self.vis_floorplan:
-            self.calculate_navmesh()
-            self.update_cur_floor_map()
-            self.vis_obj_viewpoint_on_floormap()
+        # if self.vis_floorplan:
+        self.calculate_navmesh()
+        self.update_cur_floor_map()
+        self.vis_obj_viewpoint_on_floormap()
 
-            ## save floor map image
-            floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
-            if not os.path.exists(floor_map_dir):
-                os.makedirs(floor_map_dir)
-            for lv in range(len(self.map)):
-                cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}.png', cv2.cvtColor(self.map[lv], cv2.COLOR_BGR2RGB))
-                for obj_name in self.goal_obj_names:
-                    cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}_{obj_name}.png', cv2.cvtColor(self.goal_map[lv][obj_name],cv2.COLOR_BGR2RGB))
-            print("Save floor map done")
+        ## save floor map image
+        floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
+        if not os.path.exists(floor_map_dir):
+            os.makedirs(floor_map_dir)
+        for lv in range(len(self.map)):
+            cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}.png', cv2.cvtColor(self.map[lv], cv2.COLOR_BGR2RGB))
+            for obj_name in self.goal_obj_names:
+                cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}_{obj_name}.png', cv2.cvtColor(self.goal_map[lv][obj_name],cv2.COLOR_BGR2RGB))
+        print("Save floor map done")
 
 
 
@@ -2456,10 +2466,11 @@ class Runner:
             self.cur_heading = np.zeros([3])
 
             ## -- floor plan -- ##
-            if self.vis_floorplan:
-                self.curr_level = int(self.check_position2level(start_state.position[1]))
-                self.base_map = self.map[self.curr_level].copy()
-                self.cur_graph_map = np.zeros_like(self.map[self.curr_level])
+            # if self.vis_floorplan:
+            self.curr_level = int(self.check_position2level(start_state.position[1]))
+            # self.base_map = self.map[self.curr_level].copy()
+            self.base_map = self.goal_map[self.curr_level][traj['object_category']].copy()
+            self.cur_graph_map = np.zeros_like(self.map[self.curr_level])
 
             self.end_episode = False
             self.object_goal_position = None
@@ -2719,12 +2730,14 @@ class Runner:
                 #                                                     curr_position=agent.get_state().position - self.abs_init_position,
                 #                                                     visited_positions=self.visited_positions)
 
-                self.save_video(self.vis_traj, save_dir)
+                epi_name = f'{self.env_name}_{data_idx:04d}_{self.goal_obj_names[self.goal_class_idx]}_{path_level}'
+
+                self.save_video(self.vis_traj, f'{self.args.save_dir}/{self.data_type}/vis_results/{success_fail}/videos/{self.env_name}', epi_name)
                 vis_save_dir = [save_dir + '/result.png']
                 vis_save_dir.append(
-                    f'{self.args.save_dir}/{self.data_type}/{success_fail}/{self.env_name}_{data_idx:04d}_{self.goal_obj_names[self.goal_class_idx]}_{path_level}.png')
-                if not os.path.exists(f'{self.args.save_dir}/{self.data_type}/{success_fail}'):
-                    os.makedirs(f'{self.args.save_dir}/{self.data_type}/{success_fail}')
+                    f'{self.args.save_dir}/{self.data_type}/vis_results/{success_fail}/all_images/{epi_name}.png')
+                if not os.path.exists(f'{self.args.save_dir}/{self.data_type}/vis_results/{success_fail}/all_images'):
+                    os.makedirs(f'{self.args.save_dir}/{self.data_type}/vis_results/{success_fail}/all_images')
                 # vis_save_dir = f'{self.args.save_dir}/{self.data_type}/{self.env_name}/{success_fail}/{self.env_name}_{data_idx:04d}/result.png'
                 self.save_viewpoint_on_topdown_map(save_dir=vis_save_dir,
                                                    bias_position=self.abs_init_position,

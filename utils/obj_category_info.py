@@ -40,7 +40,7 @@ rednet_obj_names = ["chair",             # 0
              "towel",             # 12
              "tv_monitor",        # 13
              "shower",            # 14
-             "bathhub",           # 15
+             "bathtub",           # 15
              "counter",           # 16
              "fireplace",         # 17
              "gym_equipment",     # 18
