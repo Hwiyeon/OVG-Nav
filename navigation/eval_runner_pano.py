@@ -2467,7 +2467,8 @@ class Runner:
 
             ## -- floor plan -- ##
             # if self.vis_floorplan:
-            self.curr_level = int(self.check_position2level(start_state.position[1]))
+            # self.curr_level = int(self.check_position2level(start_state.position[1]))
+            self.curr_level = int(self._sim.semantic_scene.objects[traj['info']['closest_goal_object_id']].region.level.id)
             # self.base_map = self.map[self.curr_level].copy()
             self.base_map = self.goal_map[self.curr_level][traj['object_category']].copy()
             self.cur_graph_map = np.zeros_like(self.map[self.curr_level])
