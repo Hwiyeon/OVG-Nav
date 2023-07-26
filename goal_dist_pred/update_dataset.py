@@ -197,8 +197,8 @@ def main_0():
                 # graph_data.adj_mtx_vec = adj_mtx_vec
 
 
-                with open(f'{data}/graph.pkl', 'wb') as f:
-                    pickle.dump(graph_data, f)
+                # with open(f'{data}/graph.pkl', 'wb') as f:
+                #     pickle.dump(graph_data, f)
                 # print(min_obj_dist)
             except KeyboardInterrupt:
                 print("KeyboardInterrupt")

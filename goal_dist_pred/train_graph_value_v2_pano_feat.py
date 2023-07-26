@@ -14,14 +14,14 @@ parser.add_argument('--vis_feat_dim', default=512, type=int)
 parser.add_argument('--max_dist', default=30., type=float)
 parser.add_argument('--use_cm_score', default=True, type=bool)
 parser.add_argument('--goal_cat', type=str, default='mp3d_21')
-parser.add_argument('--value_loss_cf', default=0.01, type=float)
-parser.add_argument('--adj_loss_cf', default=100.0, type=float)
+parser.add_argument('--value_loss_cf', default=1.0, type=float)
+parser.add_argument('--adj_loss_cf', default=10.0, type=float)
 parser.add_argument('--adj_sim_loss_cf', default=0.0, type=float)
-parser.add_argument('--sign_loss_cf', default=0.001, type=float)
+parser.add_argument('--sign_loss_cf', default=0.01, type=float)
 
 # Optimization options
-parser.add_argument('--batch-size', type=int, default=128, help="learning rate (default: 1e-05)")
-parser.add_argument('--lr', type=float, default=0.000001, help="learning rate (default: 1e-05)")
+parser.add_argument('--batch-size', type=int, default=256, help="learning rate (default: 1e-05)")
+parser.add_argument('--lr', type=float, default=0.001, help="learning rate (default: 1e-05)")
 parser.add_argument('--momentum', type=float, default=0.9)
 parser.add_argument('--weight_decay', type=float, default=1e-4)
 parser.add_argument('--max-epoch', type=int, default=12, help="maximum epoch for training (default: 60)")
@@ -47,7 +47,7 @@ parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/07
 parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_panov2_goalscore_wadjmtx_valueloss{}_adjloss{}_adjsimlos{}_signloss{}_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_panov4_layer8_goalscore_wadjmtx_valueloss{}_adjloss{}_adjsimlos{}_signloss{}_{}_maxdist{}_lr{}', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_lossv5', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
@@ -61,7 +61,7 @@ args = parser.parse_args()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-from model_value_graph_0607 import TopoGCN_v2_pano_goalscore as Model
+from model_value_graph_0607 import TopoGCN_v4_pano_goalscore as Model
 
 import torch
 import torch.nn as nn
@@ -318,20 +318,33 @@ def main():
             pred_dist = model(features, goal_features, info_features, adj_mtx)
 
             optimizer.zero_grad()
-
-            value_loss = criterion(pred_dist, node_goal_dists)
+            if args.value_loss_cf == 0:
+                value_loss = torch.tensor(0.0).cuda()
+            else:
+                value_loss = criterion(pred_dist, node_goal_dists)
 
             ### for adj mtx
             if len(eyes) < len(adj_mtx):
                 eyes = torch.eye(len(adj_mtx)).cuda()
             adj_mtx_dig0 = adj_mtx * (1-eyes[:len(adj_mtx), :len(adj_mtx)])
             indices = torch.nonzero(adj_mtx_dig0, as_tuple=True)
-            adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]], node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
-            adj_sim_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
-            if torch.isnan(adj_loss):
-                adj_loss = torch.tensor(0.0).cuda()
 
-            sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]], node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
+            if args.adj_loss_cf == 0:
+                adj_loss = torch.tensor(0.0).cuda()
+            else:
+                adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]], node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
+
+            if args.adj_sim_loss_cf == 0:
+                adj_sim_loss = torch.tensor(0.0).cuda()
+            else:
+                adj_sim_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+                if torch.isnan(adj_loss):
+                    adj_loss = torch.tensor(0.0).cuda()
+
+            if args.sign_loss_cf == 0:
+                sign_loss = torch.tensor(0.0).cuda()
+            else:
+                sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]], node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
 
             loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss + args.sign_loss_cf * sign_loss + args.adj_sim_loss_cf * adj_sim_loss
 
