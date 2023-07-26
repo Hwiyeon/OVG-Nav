@@ -1616,6 +1616,7 @@ class Runner:
             self.vis_traj.append(total_frame)
 
         self.action_step += 1
+        self.pbar.update(1)
 
         ## update candidate node
         cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1],
@@ -1792,6 +1793,7 @@ class Runner:
                 obs = self._sim.step(action)
                 self.path_length += self.dist_euclidean_floor(prev_position, self._sim.agents[0].get_state().position)
                 self.action_step += 1
+                self.pbar.update(1)
                 local_action_cnt += 1
                 if action == 'move_forward':
                     arrive_node = False
@@ -2155,6 +2157,7 @@ class Runner:
                         (action == 'move_forward' and np.linalg.norm(prev_position - curr_state.position) < self.step_size * 0.3):
                 self.local_agent.collision = True
             self.action_step += 1
+            self.pbar.update(1)
 
 
             self.local_agent.gt_new_sim_origin = get_sim_location(curr_position,
@@ -2430,6 +2433,7 @@ class Runner:
 
             self.cur_data_idx = data_idx
             self.action_step = 0
+            self.pbar = tqdm(total=self.max_step)
             # self.goal_obs_consistency = [] # { 'position': np.zeros([3]), 'count': 0}
             self.goal_obs_consistency = {
                 'position': [],
@@ -2751,6 +2755,8 @@ class Runner:
             with open(
                     f'{save_dir}/result.json', 'w') as f:
                 json.dump(result, f)
+
+            self.pbar.close()
 
             print(
                 f"[{env_idx}/{tot_env_num}] {self.env_name} - [{data_idx}/{len(valid_traj_list)}], Step: {self.action_step},   Time : {time.time() - src_start_time} \n"

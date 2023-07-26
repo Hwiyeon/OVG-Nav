@@ -1514,6 +1514,7 @@ class Runner:
             self.vis_traj.append(total_frame)
 
         self.action_step += 1
+        self.pbar.update(1)
 
         ## update candidate node
         cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1],
@@ -1685,6 +1686,7 @@ class Runner:
                 obs = self._sim.step(action)
                 self.path_length += self.dist_euclidean_floor(prev_position, self._sim.agents[0].get_state().position)
                 self.action_step += 1
+                self.pbar.update(1)
                 local_action_cnt += 1
                 if action == 'move_forward':
                     arrive_node = False
@@ -2020,6 +2022,7 @@ class Runner:
                     (action == 'move_forward' and np.linalg.norm(est_pos_diff) < self.step_size * 0.3):
                 self.local_agent.collision = True
             self.action_step += 1
+            self.pbar.update(1)
 
             self.local_agent.gt_new_sim_origin = get_sim_location(curr_position,
                                                                   quaternion.from_rotation_vector(curr_rotation))
@@ -2259,7 +2262,7 @@ class Runner:
             print("Save floor map done")
 
 
-        for traj in valid_traj_list[0:len(valid_traj_list):interval]:
+        for traj in valid_traj_list[0:len(valid_traj_list):interval][6:]:
             data_idx += 1
             if data_idx > max_data_num:
                 break
@@ -2297,6 +2300,7 @@ class Runner:
 
             self.cur_data_idx = data_idx
             self.action_step = 0
+            self.pbar = tqdm(total=self.max_step)
             # self.goal_obs_consistency = [] # { 'position': np.zeros([3]), 'count': 0}
             self.goal_obs_consistency = {
                 'position': [],
@@ -2491,20 +2495,20 @@ class Runner:
             data_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}"
             if not os.path.exists(data_dir): os.makedirs(data_dir)
 
-            # self.do_panoramic_action(self.cur_node)
-            # self.do_time_steps(data_idx)
-            try:
-
-
-                self.do_panoramic_action(self.cur_node)
-                self.do_time_steps(data_idx)
-
-            except KeyboardInterrupt:
-                print("KeyboardInterrupt")
-                break
-
-            except:
-                pass
+            self.do_panoramic_action(self.cur_node)
+            self.do_time_steps(data_idx)
+            # try:
+            #
+            #
+            #     self.do_panoramic_action(self.cur_node)
+            #     self.do_time_steps(data_idx)
+            #
+            # except KeyboardInterrupt:
+            #     print("KeyboardInterrupt")
+            #     break
+            #
+            # except:
+            #     pass
 
 
 
@@ -2624,6 +2628,8 @@ class Runner:
             with open(
                     f'{save_dir}/result.json', 'w') as f:
                 json.dump(result, f)
+
+            self.pbar.close()
 
             print(
                 f"[{env_idx}/{tot_env_num}] {self.env_name} - [{data_idx}/{len(valid_traj_list)}], Step: {self.action_step},  Time : {time.time() - src_start_time} \n"
