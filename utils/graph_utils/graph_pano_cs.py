@@ -187,10 +187,14 @@ class GraphMap(object):
 
         return node, add_new_node
 
-    def get_nearest_node(self, pos):
+    def get_nearest_node(self, pos, except_node_id=None):
         if len(self.poses) == 0:
             return None, 999
-        poses = np.array(list(self.poses))
+        poses = list(self.poses)
+        if not except_node_id is None:
+            for id in except_node_id:
+                poses.remove(self.node_by_id[id].pos)
+        poses = np.array(poses)
         pos_diff = np.array([np.linalg.norm(np.array([pos[0], pos[2]]) - np.array([p[0], p[2]])) for p in poses])
         pos_idx = np.argmin(pos_diff)
         node_idx = self.pose_to_id[tuple(poses[pos_idx])]

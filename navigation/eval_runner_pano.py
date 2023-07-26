@@ -1705,6 +1705,7 @@ class Runner:
         last_mile_obs = None
         last_mile_det = None
         invalid_edge = False
+        invalid_edge_node = []
 
         arrive_node = False
 
@@ -1715,8 +1716,8 @@ class Runner:
                 self.do_panoramic_action(self.cur_node)
             if invalid_edge:
                 # return to the previous node
-                # cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
-                temp_goal_node = self.graph_map.get_node_by_id(self.cur_node.nodeid)
+                cur_node_id, _ = self.graph_map.get_nearest_node(curr_position, except_node_id=invalid_edge_node)
+                temp_goal_node = self.graph_map.get_node_by_id(cur_node_id)
                 temp_goal_position = temp_goal_node.pos
             else:
                 subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node)
@@ -1755,6 +1756,8 @@ class Runner:
 
                 # for node_id in temp_path:
                 ## --- one node step update --- ##
+                if len(temp_path) == 0:
+                    return
                 node_id = temp_path[0]
                 temp_goal_node = self.graph_map.get_node_by_id(node_id)
                 temp_goal_position = temp_goal_node.pos
@@ -1931,6 +1934,7 @@ class Runner:
                     break
                 else:
                     invalid_edge = False
+                    invalid_edge_node = []
 
 
 
@@ -1941,8 +1945,11 @@ class Runner:
                 break
             if local_action_cnt < self.max_local_action_trial and not terminate_local:
                 invalid_edge = False
+                invalid_edge_node = []
             if invalid_edge:
+                print('invalid edge')
                 self.graph_map.delete_edge(self.cur_node, temp_goal_node)
+                invalid_edge_node.append(temp_goal_node.nodeid)
                 continue
 
             # if arrive_node:
@@ -1953,6 +1960,7 @@ class Runner:
             self.cur_node = temp_goal_node
             arrive_node = True
             invalid_edge = False
+            invalid_edge_node = []
 
             # update current arrived node
             # curr_state = self._sim.agents[0].get_state()

@@ -336,7 +336,7 @@ def make_cfg(settings):
                     orientation=sensor_params["orientation"],
                 )
                 if 'depth' in sensor_uuid and settings["noisy_depth"]:
-                    sensor_spec.noise_model = "RedwoodDepthNoiseModel"
+                    sensor_spec.noise_model = "RedwoodDepthNoiseModel_custom"
                     sensor_spec.noise_model_kwargs = dict(noise_multiplier=settings["noisy_depth_multiplier"])
 
             sensor_specs.append(sensor_spec)
