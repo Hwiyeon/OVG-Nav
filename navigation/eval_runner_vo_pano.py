@@ -1414,7 +1414,7 @@ class Runner:
         while path[-1] != start_node_id:
             path.append(predecessors[start_node_id, path[-1]])
             if path[-1] == -9999:
-                return []
+                return [], []
         path.reverse()
 
         path = [str(i) for i in path]
