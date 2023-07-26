@@ -207,12 +207,12 @@ class LocalAgent(object):
             int(y / self.map_resolution),
             int(x / self.map_resolution),
         )
-        try:
-            traversible[start[0] - 2 : start[0] + 3, start[1] - 2 : start[1] + 3] = 1
-        except:
-            import ipdb
-
-            ipdb.set_trace()
+        # try:
+        #     traversible[start[0] - 2 : start[0] + 3, start[1] - 2 : start[1] + 3] = 1
+        # except:
+        #     import ipdb
+        #
+        #     ipdb.set_trace()
         planner = FMMPlanner(self.args, traversible, 360 // 10, 1)
 
         if self.reset_goal:

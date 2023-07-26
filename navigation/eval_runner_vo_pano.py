@@ -1616,8 +1616,8 @@ class Runner:
                 # return to the previous node
                 # temp_goal_node = self.graph_map.get_node_by_id(self.cur_node.nodeid)
                 # temp_goal_position = self.cur_node.pos
-                cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
-                temp_goal_node = self.graph_map.get_node_by_id(cur_node_id)
+                # cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
+                temp_goal_node = self.graph_map.get_node_by_id(self.cur_node.nodeid)
                 temp_goal_position = temp_goal_node.pos
             else:
                 subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node)
@@ -2262,7 +2262,7 @@ class Runner:
             print("Save floor map done")
 
 
-        for traj in valid_traj_list[0:len(valid_traj_list):interval][6:]:
+        for traj in valid_traj_list[0:len(valid_traj_list):interval][10:]:
             data_idx += 1
             if data_idx > max_data_num:
                 break

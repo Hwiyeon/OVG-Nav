@@ -1715,8 +1715,8 @@ class Runner:
                 self.do_panoramic_action(self.cur_node)
             if invalid_edge:
                 # return to the previous node
-                cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
-                temp_goal_node = self.graph_map.get_node_by_id(cur_node_id)
+                # cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
+                temp_goal_node = self.graph_map.get_node_by_id(self.cur_node.nodeid)
                 temp_goal_position = temp_goal_node.pos
             else:
                 subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node)
