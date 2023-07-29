@@ -130,42 +130,65 @@ def main_0():
                 with open(f'{data}/graph.pkl', 'rb') as f:
                     graph_data = pickle.load(f)
 
-                ## pre compute pano scores
-                nodes = [graph_data.node_by_id[id] for id in graph_data.node_by_id.keys()]
+                # ## pre compute pano scores
+                # nodes = [graph_data.node_by_id[id] for id in graph_data.node_by_id.keys()]
+                #
+                # cand_weight = torch.Tensor(graph_data.goal_cm_info['cand_category_room_score'][:5])
+                # min_obj_dist = np.inf
+                # for i in range(len(nodes)):
+                #     nodeid = nodes[i].nodeid
+                #
+                #     node_goal_cm_scores = torch.Tensor(nodes[i].goal_cm_info['goal_cm_scores']) * 0.01
+                #     # node_goal_cm_scores = torch.softmax(node_goal_cm_scores, dim=1)
+                #     node_goal_cm_scores[torch.isnan(node_goal_cm_scores)] = 0.0  ## maskout nan
+                #     graph_data.node_by_id[nodeid].goal_cm_scores = node_goal_cm_scores
+                #
+                #     node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5]) * 0.01
+                #     # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
+                #     #                                         dim=1) * cand_weight  ## weighted by room category
+                #     node_cand_cm_scores[torch.isnan(node_cand_cm_scores)] = 0.0  ## maskout nan
+                #     graph_data.node_by_id[nodeid].cand_cm_scores = node_cand_cm_scores
+                #
+                #     node_pano_vis_feat = nodes[i].clip_feat
+                #     node_pano_vis_feat[torch.isnan(node_pano_vis_feat)] = 0.0  ## maskout nan
+                #     graph_data.node_by_id[nodeid].pano_vis_feat = node_pano_vis_feat
 
-                cand_weight = torch.Tensor(graph_data.goal_cm_info['cand_category_room_score'][:5])
-                min_obj_dist = np.inf
-                for i in range(len(nodes)):
-                    nodeid = nodes[i].nodeid
+                adj_mtx = np.copy(graph_data.adj_mtx)
+                mask = adj_mtx > 0
+                weighted_adj_mtx = np.copy(adj_mtx)
+                weighted_adj_mtx[mask] = 1 / (1 + np.exp(-1 / weighted_adj_mtx[mask]))
+                graph_data.weighted_adj_mtx = weighted_adj_mtx + np.eye(weighted_adj_mtx.shape[0])
 
-                    node_goal_cm_scores = torch.Tensor(nodes[i].goal_cm_info['goal_cm_scores']) * 0.01
-                    # node_goal_cm_scores = torch.softmax(node_goal_cm_scores, dim=1)
-                    node_goal_cm_scores[torch.isnan(node_goal_cm_scores)] = 0.0  ## maskout nan
-                    graph_data.node_by_id[nodeid].goal_cm_scores = node_goal_cm_scores
+                connection_adj_mtx = np.copy(adj_mtx)
+                connection_adj_mtx[mask] = 1
+                graph_data.connection_adj_mtx = connection_adj_mtx + np.eye(connection_adj_mtx.shape[0])
 
-                    node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5]) * 0.01
-                    # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
-                    #                                         dim=1) * cand_weight  ## weighted by room category
-                    node_cand_cm_scores[torch.isnan(node_cand_cm_scores)] = 0.0  ## maskout nan
-                    graph_data.node_by_id[nodeid].cand_cm_scores = node_cand_cm_scores
+                ## -- normalized adj mtx -- ##
+                weighted_adj_mtx = graph_data.weighted_adj_mtx
+                weighted_degree = np.sum(weighted_adj_mtx, axis=1)
+                weighted_degree_mtx_inv_sqrt = np.diag(np.power(weighted_degree, -0.5))
+                graph_data.weighted_degree_mtx_inv_sqrt = weighted_degree_mtx_inv_sqrt
+                graph_data.normalized_weighted_adj_mtx = weighted_degree_mtx_inv_sqrt @ weighted_adj_mtx @ weighted_degree_mtx_inv_sqrt
 
-                    node_pano_vis_feat = nodes[i].clip_feat
-                    node_pano_vis_feat[torch.isnan(node_pano_vis_feat)] = 0.0  ## maskout nan
-                    graph_data.node_by_id[nodeid].pano_vis_feat = node_pano_vis_feat
+                ## -- normalized connection adj mtx -- ##
+                connection_adj_mtx = graph_data.connection_adj_mtx
+                connection_degree = np.sum(connection_adj_mtx, axis=1)
+                connection_degree_mtx_inv_sqrt = np.diag(np.power(connection_degree, -0.5))
+                graph_data.connection_degree_mtx_inv_sqrt = connection_degree_mtx_inv_sqrt
+                graph_data.normalized_connection_adj_mtx = connection_degree_mtx_inv_sqrt @ connection_adj_mtx @ connection_degree_mtx_inv_sqrt
 
-                    adj_mtx = np.copy(graph_data.adj_mtx)
-                    mask = adj_mtx > 0
-                    weighted_adj_mtx = np.copy(adj_mtx)
-                    weighted_adj_mtx[mask] = 1 / (1 + np.exp(-1 / weighted_adj_mtx[mask]))
-                    graph_data.weighted_adj_mtx = weighted_adj_mtx
 
-                    connection_adj_mtx = np.copy(adj_mtx)
-                    connection_adj_mtx[mask] = 1
-                    graph_data.connection_adj_mtx = connection_adj_mtx
+                # ## -- normalized adj mtx ver 2 -- ##
+                # weighted_adj_mtx = graph_data.weighted_adj_mtx
+                # weighted_degree = np.sum(weighted_adj_mtx, axis=1)
+                # normalized_weighted_adj_mtx_v2 = weighted_adj_mtx / weighted_degree[:, None]
 
-                    # adj_mtx = graph_data.adj_mtx
-                    # mask = adj_mtx > 0
-                    # adj_mtx[mask] = 1
+
+
+                # adj_mtx = graph_data.adj_mtx
+                # mask = adj_mtx > 0
+                # adj_mtx[mask] = 1
+
 
                     # if np.min(nodes[i].dist_to_objs) < min_obj_dist:
                     #     min_obj_dist = np.min(nodes[i].dist_to_objs)
@@ -215,48 +238,62 @@ def main_0():
                 ## pre compute pano scores
                 nodes = [graph_data.node_by_id[id] for id in graph_data.node_by_id.keys()]
 
-                cand_weight = torch.Tensor(graph_data.goal_cm_info['cand_category_room_score'][:5])
+                # cand_weight = torch.Tensor(graph_data.goal_cm_info['cand_category_room_score'][:5])
+                #
+                # max_goal_val, max_cand_val = -1, -1
+                # min_goal_val, min_cand_val = 1, 1
+                #
+                # for i in range(len(nodes)):
+                #     nodeid = nodes[i].nodeid
+                #
+                #     node_goal_cm_scores = torch.Tensor(nodes[i].goal_cm_info['goal_cm_scores']) * 0.01
+                #     # node_goal_cm_scores = torch.softmax(node_goal_cm_scores, dim=1)
+                #     node_goal_cm_scores[torch.isnan(node_goal_cm_scores)] = 0.0  ## maskout nan
+                #     graph_data.node_by_id[nodeid].goal_cm_scores = node_goal_cm_scores
+                #
+                #     node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5]) * 0.01
+                #     # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
+                #     #                                         dim=1) * cand_weight  ## weighted by room category
+                #     node_cand_cm_scores[torch.isnan(node_cand_cm_scores)] = 0.0  ## maskout nan
+                #     graph_data.node_by_id[nodeid].cand_cm_scores = node_cand_cm_scores
+                #
+                #
+                #     if max_goal_val < torch.max(node_goal_cm_scores):
+                #         max_goal_val = torch.max(node_goal_cm_scores)
+                #     if min_goal_val > torch.min(node_goal_cm_scores) and torch.min(node_goal_cm_scores) != 0.0:
+                #         min_goal_val = torch.min(node_goal_cm_scores)
+                #     if max_cand_val < torch.max(node_cand_cm_scores):
+                #         max_cand_val = torch.max(node_cand_cm_scores)
+                #     if min_cand_val > torch.min(node_cand_cm_scores) and torch.min(node_cand_cm_scores) != 0.0:
+                #         min_cand_val = torch.min(node_cand_cm_scores)
+                #
+                #     node_pano_vis_feat = nodes[i].clip_feat
+                #     node_pano_vis_feat[torch.isnan(node_pano_vis_feat)] = 0.0  ## maskout nan
+                #     graph_data.node_by_id[nodeid].pano_vis_feat = node_pano_vis_feat
 
-                max_goal_val, max_cand_val = -1, -1
-                min_goal_val, min_cand_val = 1, 1
+                adj_mtx = np.copy(graph_data.adj_mtx)
+                mask = adj_mtx > 0
+                weighted_adj_mtx = np.copy(adj_mtx)
+                weighted_adj_mtx[mask] = 1 / (1 + np.exp(-1 / weighted_adj_mtx[mask]))
+                graph_data.weighted_adj_mtx = weighted_adj_mtx + np.eye(weighted_adj_mtx.shape[0])
 
-                for i in range(len(nodes)):
-                    nodeid = nodes[i].nodeid
+                connection_adj_mtx = np.copy(adj_mtx)
+                connection_adj_mtx[mask] = 1
+                graph_data.connection_adj_mtx = connection_adj_mtx + np.eye(connection_adj_mtx.shape[0])
 
-                    node_goal_cm_scores = torch.Tensor(nodes[i].goal_cm_info['goal_cm_scores']) * 0.01
-                    # node_goal_cm_scores = torch.softmax(node_goal_cm_scores, dim=1)
-                    node_goal_cm_scores[torch.isnan(node_goal_cm_scores)] = 0.0  ## maskout nan
-                    graph_data.node_by_id[nodeid].goal_cm_scores = node_goal_cm_scores
+                ## -- normalized adj mtx -- ##
+                weighted_adj_mtx = graph_data.weighted_adj_mtx
+                weighted_degree = np.sum(weighted_adj_mtx, axis=1)
+                weighted_degree_mtx_inv_sqrt = np.diag(np.power(weighted_degree, -0.5))
+                graph_data.weighted_degree_mtx_inv_sqrt = weighted_degree_mtx_inv_sqrt
+                graph_data.normalized_weighted_adj_mtx = weighted_degree_mtx_inv_sqrt @ weighted_adj_mtx @ weighted_degree_mtx_inv_sqrt
 
-                    node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5]) * 0.01
-                    # weighted_cand_cm_scores = torch.softmax(node_cand_cm_scores,
-                    #                                         dim=1) * cand_weight  ## weighted by room category
-                    node_cand_cm_scores[torch.isnan(node_cand_cm_scores)] = 0.0  ## maskout nan
-                    graph_data.node_by_id[nodeid].cand_cm_scores = node_cand_cm_scores
-
-
-                    if max_goal_val < torch.max(node_goal_cm_scores):
-                        max_goal_val = torch.max(node_goal_cm_scores)
-                    if min_goal_val > torch.min(node_goal_cm_scores) and torch.min(node_goal_cm_scores) != 0.0:
-                        min_goal_val = torch.min(node_goal_cm_scores)
-                    if max_cand_val < torch.max(node_cand_cm_scores):
-                        max_cand_val = torch.max(node_cand_cm_scores)
-                    if min_cand_val > torch.min(node_cand_cm_scores) and torch.min(node_cand_cm_scores) != 0.0:
-                        min_cand_val = torch.min(node_cand_cm_scores)
-
-                    node_pano_vis_feat = nodes[i].clip_feat
-                    node_pano_vis_feat[torch.isnan(node_pano_vis_feat)] = 0.0  ## maskout nan
-                    graph_data.node_by_id[nodeid].pano_vis_feat = node_pano_vis_feat
-
-                    adj_mtx = np.copy(graph_data.adj_mtx)
-                    mask = adj_mtx > 0
-                    weighted_adj_mtx = np.copy(adj_mtx)
-                    weighted_adj_mtx[mask] = 1 / (1 + np.exp(-1 / weighted_adj_mtx[mask]))
-                    graph_data.weighted_adj_mtx = weighted_adj_mtx
-
-                    connection_adj_mtx = np.copy(adj_mtx)
-                    connection_adj_mtx[mask] = 1
-                    graph_data.connection_adj_mtx = connection_adj_mtx
+                ## -- normalized connection adj mtx -- ##
+                connection_adj_mtx = graph_data.connection_adj_mtx
+                connection_degree = np.sum(connection_adj_mtx, axis=1)
+                connection_degree_mtx_inv_sqrt = np.diag(np.power(connection_degree, -0.5))
+                graph_data.connection_degree_mtx_inv_sqrt = connection_degree_mtx_inv_sqrt
+                graph_data.normalized_connection_adj_mtx = connection_degree_mtx_inv_sqrt @ connection_adj_mtx @ connection_degree_mtx_inv_sqrt
 
 
                     # node_cand_cm_scores = torch.Tensor(nodes[i].goal_cm_info['cand_cm_scores'][:, :5])

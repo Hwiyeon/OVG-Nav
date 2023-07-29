@@ -8,7 +8,7 @@ import argparse
 
 parser = argparse.ArgumentParser("Pytorch code for unsupervised video summarization with REINFORCE")
 
-parser.add_argument("--run_type", type=str, default="train")
+parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=0)
 parser.add_argument("--data_split_max", type=int, default=1)
 
@@ -137,6 +137,25 @@ def main():
 
     train_end_epi_list = [f"{component}_{suffix:03d}" for component, suffix in path_groups.items()]
 
+    path_groups = {}
+    for path in val_list:
+        # Extract the component part (e.g., 'A/B', 'A/C')
+        component = "_".join(path.rsplit('_', 1)[:-1])
+
+        # Extract the suffix and convert it to an integer
+        suffix = int(path.rsplit('_', 1)[-1])
+
+        # Check if the component already exists in the dictionary
+        if component in path_groups:
+            # If the current suffix is greater than the existing maximum, update it
+            if suffix > path_groups[component]:
+                path_groups[component] = suffix
+        else:
+            # If the component is not in the dictionary, add it with the current suffix
+            path_groups[component] = suffix
+
+    val_end_epi_list = [f"{component}_{suffix:03d}" for component, suffix in path_groups.items()]
+
 
 
     # ## -- check invalid data -- ##
@@ -149,7 +168,7 @@ def main():
         val_data_cnt = 0
 
 
-        for data in tqdm(val_list, total=len(val_list)):
+        for data in tqdm(val_end_epi_list, total=len(val_end_epi_list)):
             try:
                 with open(f'{data}/graph.pkl', 'rb') as f:
                     graph_data = pickle.load(f)
@@ -161,6 +180,20 @@ def main():
                 val_graph_median_length.append(np.median(np.array(lengths)))
                 val_graph_max_length.append(np.max(lengths))
                 val_data_cnt += 1
+
+                nodes = [graph_data.node_by_id[id] for id in graph_data.node_by_id.keys()]
+                dist = []
+                for node in nodes:
+                    dist.append(min(node.dist_to_objs))
+
+                dist_diff = []
+                score_diff = []
+                for i, j in graph_data.edge_ids:
+                    dist_diff.append(
+                        np.min(graph_data.node_by_id[i].dist_to_objs) - np.min(graph_data.node_by_id[j].dist_to_objs))
+                    score_src = max(1 - np.min(graph_data.node_by_id[i].dist_to_objs) / 30, 0)
+                    score_tgt = max(1 - np.min(graph_data.node_by_id[j].dist_to_objs) / 30, 0)
+                    score_diff.append(score_src - score_tgt)
 
             except KeyboardInterrupt:
                 print("KeyboardInterrupt")

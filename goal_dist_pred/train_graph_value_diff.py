@@ -16,9 +16,9 @@ parser.add_argument('--max_dist', default=30., type=float)
 parser.add_argument('--use_cm_score', default=True, type=bool)
 parser.add_argument('--goal_cat', type=str, default='mp3d_21')
 parser.add_argument('--value_loss_cf', default=1.0, type=float)
-parser.add_argument('--adj_loss_cf', default=10.0, type=float)
-parser.add_argument('--adj_sim_loss_cf', default=0.0, type=float)
-parser.add_argument('--sign_loss_cf', default=0.01, type=float)
+parser.add_argument('--adj_loss_cf', default=1.0, type=float)
+parser.add_argument('--adj_sim_loss_cf', default=1.0, type=float)
+parser.add_argument('--sign_loss_cf', default=0.05, type=float)
 
 # Optimization options
 parser.add_argument('--batch-size', type=int, default=512, help="learning rate (default: 1e-05)")
@@ -37,7 +37,7 @@ parser.add_argument('--resume', type=str, default='', help="path to resume file"
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
 parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
-# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0704/21cat_relative_pose_step_by_step_pano', type=str)
+# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0704/21cat_relative_pose_step_by_step_pano_edge2.0', type=str)
 # parser.add_argument('--data-dir_aug', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cmv2', type=str)
 # parser.add_argument('--data-dir_aug', default=[
 #                                               '/data2/hwing/Dataset/cm_graph/mp3d/0622/no_rot_bias_step_by_step_v2',
@@ -48,8 +48,8 @@ parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/07
 parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_panov3_layer5_hidden{}_goalscore_nc_adjmtx_valueloss{}_adjloss{}_adjsimlos{}_signloss{}_{}_maxdist{}_lr{}', type=str)
-parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_lossv5', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_panov4_2_layer10_hidden{}_goalscore_w_adjmtx_valueloss{}_adjloss{}_10hoploss{}_10hopsignloss{}_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_lossv6', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
 parser.add_argument('--checkpoints', type=str, default=None)
@@ -80,7 +80,7 @@ import wandb
 import cv2
 from tqdm import tqdm
 
-from dataloader_batch_graph_data_0607 import Batch_traj_DataLoader_pano_goalscore as Batch_traj_DataLoader
+from dataloader_batch_graph_data_0607 import Batch_traj_DataLoader_pano_goalscore_minmax_diff as Batch_traj_DataLoader
 # from dataloader_batch_graph_data_0607 import Batch_traj_DataLoader_rank as Batch_traj_DataLoader
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
@@ -170,14 +170,18 @@ def main():
         node_goal_dists = torch.cat([sample['node_goal_dists'] for sample in samples], dim=0)
         node_pose = torch.cat([sample['node_pose'] for sample in samples], dim=0)
         goal_idx = torch.cat([sample['goal_idx'] for sample in samples], dim=0)
+        
 
         batch_size = node_features.size()[0]
         adj_mtx = torch.zeros(batch_size, batch_size)
+        min_max_mtx = torch.zeros(batch_size, batch_size)
         adj_starting_point = 0
         for i, sample in enumerate(samples):
             adj_size = sample['adj_mtx'].size()[0]
             adj_mtx[adj_starting_point:adj_starting_point+adj_size,
                     adj_starting_point:adj_starting_point+adj_size] = sample['adj_mtx']
+            min_max_mtx[adj_starting_point:adj_starting_point+adj_size,
+                    adj_starting_point:adj_starting_point+adj_size] = sample['min_max_mtx']
             adj_starting_point += adj_size
         return {
             'node_features': node_features,
@@ -186,7 +190,8 @@ def main():
             'adj_mtx': adj_mtx,
             'node_goal_dists': node_goal_dists,
             'node_pose': node_pose,
-            'goal_idx': goal_idx
+            'goal_idx': goal_idx,
+            'min_max_mtx': min_max_mtx
         }
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, collate_fn=make_collate_batch, shuffle=True, num_workers=8)
@@ -273,7 +278,7 @@ def main():
 
     # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
     # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.999 ** epoch)
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: (0.1**(1/(train_batch_num*3))) ** epoch)
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: (0.1**(1/(train_batch_num*4))) ** epoch)
 
     mse = nn.MSELoss()
     bce = nn.BCEWithLogitsLoss()
@@ -315,6 +320,7 @@ def main():
             goal_features = data['node_goal_features'].cuda()
             adj_mtx = data['adj_mtx'].cuda()
             node_goal_dists = data['node_goal_dists'].cuda()
+            min_max_mtx = data['min_max_mtx'].cuda()
 
             pred_dist = model(features, goal_features, info_features, adj_mtx)
 
@@ -329,23 +335,25 @@ def main():
                 eyes = torch.eye(len(adj_mtx)).cuda()
             adj_mtx_dig0 = adj_mtx * (1-eyes[:len(adj_mtx), :len(adj_mtx)])
             indices = torch.nonzero(adj_mtx_dig0, as_tuple=True)
+            min_max_mtx0 = min_max_mtx * (1-eyes[:len(adj_mtx), :len(adj_mtx)])
+            min_max_indices = torch.nonzero(min_max_mtx0, as_tuple=True)
 
             if args.adj_loss_cf == 0:
                 adj_loss = torch.tensor(0.0).cuda()
             else:
-                adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]].detach(), node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
+                adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]], node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
 
             if args.adj_sim_loss_cf == 0:
                 adj_sim_loss = torch.tensor(0.0).cuda()
             else:
-                adj_sim_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+                adj_sim_loss = criterion(pred_dist[min_max_indices[0]] - pred_dist[min_max_indices[1]], node_goal_dists[min_max_indices[0]] - node_goal_dists[min_max_indices[1]])
                 if torch.isnan(adj_loss):
                     adj_loss = torch.tensor(0.0).cuda()
 
             if args.sign_loss_cf == 0:
                 sign_loss = torch.tensor(0.0).cuda()
             else:
-                sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]].detach(), node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
+                sign_loss = sign_penalty_loss(pred_dist[min_max_indices[0]] - pred_dist[min_max_indices[1]], node_goal_dists[min_max_indices[0]] - node_goal_dists[min_max_indices[1]])
 
             loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss + args.sign_loss_cf * sign_loss + args.adj_sim_loss_cf * adj_sim_loss
 
@@ -430,6 +438,7 @@ def main():
                 adj_mtx = data['adj_mtx'].cuda()
                 node_goal_dists = data['node_goal_dists'].cuda()
                 goal_idx = data['goal_idx']
+                min_max_mtx = data['min_max_mtx'].cuda()
 
                 cand_nodes = 1 - info_features[:, 0]
                 if torch.sum(cand_nodes) < 3:
@@ -448,17 +457,20 @@ def main():
                     eyes = torch.eye(len(adj_mtx)).cuda()
                 adj_mtx_dig0 = adj_mtx * (1 - eyes[:len(adj_mtx), :len(adj_mtx)])
                 indices = torch.nonzero(adj_mtx_dig0, as_tuple=True)
-                adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]].detach(),
+                min_max_mtx0 = min_max_mtx * (1 - eyes[:len(adj_mtx), :len(adj_mtx)])
+                min_max_indices = torch.nonzero(min_max_mtx0, as_tuple=True)
+                
+                adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]],
                                      node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
                 if torch.isnan(adj_loss):
                     adj_loss = torch.tensor(0.0).cuda()
 
-                adj_sim_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+                adj_sim_loss = criterion(pred_dist[min_max_indices[0]] - pred_dist[min_max_indices[1]], node_goal_dists[min_max_indices[0]] - node_goal_dists[min_max_indices[1]])
                 if torch.isnan(adj_sim_loss):
                     adj_sim_loss = torch.tensor(0.0).cuda()
 
-                sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]].detach(),
-                                              node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
+                sign_loss = sign_penalty_loss(pred_dist[min_max_indices[0]] - pred_dist[min_max_indices[1]],
+                                              node_goal_dists[min_max_indices[0]] - node_goal_dists[min_max_indices[1]])
 
                 loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss + args.sign_loss_cf * sign_loss + args.adj_sim_loss_cf * adj_sim_loss
 
@@ -694,11 +706,15 @@ def eval(checkpoint_path):
 
         batch_size = node_features.size()[0]
         adj_mtx = torch.zeros(batch_size, batch_size)
+        min_max_mtx = torch.zeros(batch_size, batch_size)
         adj_starting_point = 0
         for i, sample in enumerate(samples):
             adj_size = sample['adj_mtx'].size()[0]
             adj_mtx[adj_starting_point:adj_starting_point + adj_size,
-            adj_starting_point:adj_starting_point + adj_size] = sample['adj_mtx']
+                    adj_starting_point:adj_starting_point + adj_size] = sample['adj_mtx']
+            min_max_mtx[adj_starting_point:adj_starting_point + adj_size,
+                        adj_starting_point:adj_starting_point + adj_size] = sample['min_max_mtx']
+            
             adj_starting_point += adj_size
         return {
             'node_features': node_features,
@@ -707,7 +723,8 @@ def eval(checkpoint_path):
             'adj_mtx': adj_mtx,
             'node_goal_dists': node_goal_dists,
             'node_pose': node_pose,
-            'goal_idx': goal_idx
+            'goal_idx': goal_idx,
+            'min_max_mtx': min_max_mtx
         }
 
     valid_loader = DataLoader(dataset=val_dataset, batch_size=1, collate_fn=make_collate_batch, num_workers=4)
@@ -787,6 +804,7 @@ def eval(checkpoint_path):
             adj_mtx = data['adj_mtx'].cuda()
             node_goal_dists = data['node_goal_dists'].cuda()
             goal_idx = data['goal_idx']
+            min_max_mtx = data['min_max_mtx'].cuda()
 
             cand_nodes = 1 - info_features[:, 0]
             if torch.sum(cand_nodes) < 3:
@@ -802,16 +820,18 @@ def eval(checkpoint_path):
                 eyes = torch.eye(len(adj_mtx)).cuda()
             adj_mtx_dig0 = adj_mtx * (1 - eyes[:len(adj_mtx), :len(adj_mtx)])
             indices = torch.nonzero(adj_mtx_dig0, as_tuple=True)
-            adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]].detach(),
+            min_max_mtx0 = min_max_mtx * (1 - eyes[:len(adj_mtx), :len(adj_mtx)])
+            min_max_indices = torch.nonzero(min_max_mtx0, as_tuple=True)
+            adj_loss = criterion(pred_dist[indices[0]] - pred_dist[indices[1]],
                                  node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
             if torch.isnan(adj_loss):
                 adj_loss = torch.tensor(0.0).cuda()
-            adj_sim_loss = criterion(pred_dist[indices[0]], pred_dist[indices[1]].detach())
+            adj_sim_loss = criterion(pred_dist[min_max_indices[0]] - pred_dist[min_max_indices[1]], node_goal_dists[min_max_indices[0]] - node_goal_dists[min_max_indices[1]])
             if torch.isnan(adj_sim_loss):
                 adj_sim_loss = torch.tensor(0.0).cuda()
 
-            sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]].detach(),
-                                          node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
+            sign_loss = sign_penalty_loss(pred_dist[min_max_indices[0]] - pred_dist[min_max_indices[1]],
+                                          node_goal_dists[min_max_indices[0]] - node_goal_dists[min_max_indices[1]])
 
             loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss + args.sign_loss_cf * sign_loss + args.adj_sim_loss_cf * adj_sim_loss
 
