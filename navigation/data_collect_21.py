@@ -13,7 +13,7 @@ import argparse
 parser = argparse.ArgumentParser()
 
 ## eval configs ##
-parser.add_argument("--gpu_list", type=str, default="9")
+parser.add_argument("--gpu_list", type=str, default="1")
 parser.add_argument("--model_gpu", type=str, default="0")
 parser.add_argument("--sim_gpu", type=str, default="0")
 # parser.add_argument("--data", type=str, default="gibosn")
@@ -22,8 +22,8 @@ parser.add_argument("--max_step", type=int, default=500)
 parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=0)
-parser.add_argument("--data_split_max", type=int, default=23)
-parser.add_argument("--save_dir", type=str, default="/disk4/hwing/Dataset/cm_graph/{}/0715/21cat_relative_pose_step_by_step_pano_connect")
+parser.add_argument("--data_split_max", type=int, default=1)
+parser.add_argument("--save_dir", type=str, default="/disk4/hwing/Dataset/cm_graph/{}/0729/21cat_relative_pose_step_by_step_pano_connect_edge1_v2")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -65,6 +65,7 @@ parser.add_argument('--noisy_depth', type=bool, default=False, help='use Redwood
 parser.add_argument('--noisy_depth_multiplier', type=float, default=5., help='use RedwoodDepthNoiseModel noise multiplier')
 parser.add_argument("--noise_dir", type=str, default="navigation/noise_models")
 parser.add_argument('--noisy_action', type=bool, default=False, help='')
+parser.add_argument('--noisy_action_multiplier', type=float, default=0.05)
 parser.add_argument('--noisy_pose', type=bool, default=False, help='')
 
 ## local navigation configs ##
@@ -147,13 +148,13 @@ def get_data_list(args):
     env_list = np.sort(env_list)
 
 
-    if args.run_type == 'train':
-        if args.data_split == args.data_split_max-1:
-            dataset_list = dataset_list[int(args.data_split * len(dataset_list) / args.data_split_max):]
-            env_list = env_list[int(args.data_split * len(env_list) / args.data_split_max):]
-        else:
-            dataset_list = dataset_list[int(args.data_split*len(dataset_list)/args.data_split_max):int((args.data_split+1)*len(dataset_list)/args.data_split_max)]
-            env_list = env_list[int(args.data_split*len(env_list)/args.data_split_max):int((args.data_split+1)*len(env_list)/args.data_split_max)]
+    # if args.run_type == 'train':
+    if args.data_split == args.data_split_max-1:
+        dataset_list = dataset_list[int(args.data_split * len(dataset_list) / args.data_split_max):]
+        env_list = env_list[int(args.data_split * len(env_list) / args.data_split_max):]
+    else:
+        dataset_list = dataset_list[int(args.data_split*len(dataset_list)/args.data_split_max):int((args.data_split+1)*len(dataset_list)/args.data_split_max)]
+        env_list = env_list[int(args.data_split*len(env_list)/args.data_split_max):int((args.data_split+1)*len(env_list)/args.data_split_max)]
     print(env_list)
 
     return env_list, dataset_list
@@ -201,7 +202,7 @@ def main(env_list, dataset_list):
     }
 
 
-    # env_list, dataset_list = env_list[:1], dataset_list[:1]
+    # env_list, dataset_list = env_list[1:], dataset_list[1:]
     ## for debug
     # env_list = ['gZ6f7yhEvPG']
     # dataset = []

@@ -8,7 +8,7 @@ import argparse
 
 parser = argparse.ArgumentParser("Pytorch code for unsupervised video summarization with REINFORCE")
 
-parser.add_argument("--run_type", type=str, default="val")
+parser.add_argument("--run_type", type=str, default="train")
 parser.add_argument("--data_split", type=int, default=0)
 parser.add_argument("--data_split_max", type=int, default=1)
 
@@ -32,7 +32,7 @@ parser.add_argument('--seed', type=int, default=1, help="random seed (default: 1
 parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0729/21cat_relative_pose_step_by_step_pano_connect_edge2', type=str)
 parser.add_argument('--log_dir', default='logs/cm_0607/0607_{}_lr{}_test', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")

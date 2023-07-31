@@ -162,12 +162,14 @@ class GraphMap(object):
         pos = tuple([round(x, 4) for x in pos])
         return self.node_by_id[self.pose_to_id[pos]]
 
-    def add_single_node(self, pos):
+    def add_single_node(self, pos, min_node_dist=None):
         add_new_node = True
+        if min_node_dist is None:
+            min_node_dist = self.min_node_dist
         pos = tuple([round(x, 4) for x in pos])
         # if pos in self.poses:
         nearest_node_idx, nearest_node_dist = self.get_nearest_node(pos)
-        if nearest_node_dist < self.min_node_dist:
+        if nearest_node_dist < min_node_dist:
             node = self.node_by_id[nearest_node_idx]
             add_new_node = False
         else:

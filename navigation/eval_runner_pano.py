@@ -1454,12 +1454,12 @@ class Runner:
         return target_position
 
 
-    def update_cand_node_to_graph(self, cur_node, cand_nodes):
+    def update_cand_node_to_graph(self, cur_node, cand_nodes, min_node_dist=None):
         if len(cand_nodes) == 0:
             return
         cand_node_list = []
         for cand_node_info in cand_nodes:
-            cand_node, add_new_node = self.graph_map.add_single_node(cand_node_info['position'])
+            cand_node, add_new_node = self.graph_map.add_single_node(cand_node_info['position'], min_node_dist=min_node_dist)
             # cand_node = self.graph_map.get_node_by_pos(cand_node_info['position'])
             # if int(cand_node.nodeid) == len(self.graph_map.nodes)-1: ## new node
             self.graph_map.update_node_goal_category(cand_node, self.goal_class_onehot)
@@ -1894,7 +1894,7 @@ class Runner:
                                                      curr_rotation,
                                                      np.array(curr_state.position) - np.array(self.abs_init_position))
                 cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
-                self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes)
+                self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes, min_node_dist=self.edge_range)
 
 
 

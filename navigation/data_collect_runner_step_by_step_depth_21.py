@@ -205,7 +205,7 @@ class Runner:
         video.release()
 
     def save_video(self, frame_list, save_dir, env_name, idx):
-        data_dir = f"{save_dir}/{self.data_type}/{env_name}/{env_name}_{idx:04d}"
+        data_dir = f"{save_dir}/vis/{self.data_type}/{env_name}/{env_name}_{idx:04d}"
         if not os.path.exists(data_dir): os.makedirs(data_dir)
 
         width = np.shape(frame_list[0])[1]
@@ -295,18 +295,18 @@ class Runner:
     def panoramic_obs(self, obs, semantic=False):
 
         rgb_panoramic = np.zeros([self.pano_height, self.pano_width, 3]).astype(int)
-        depth_panoramic = np.zeros([self.pano_height, self.pano_width])
-        if semantic:
-            semantic_panoramic = np.zeros([self.pano_height, self.pano_width]).astype(int)
+        # depth_panoramic = np.zeros([self.pano_height, self.pano_width])
+        # if semantic:
+        #     semantic_panoramic = np.zeros([self.pano_height, self.pano_width]).astype(int)
 
         for i, rot in enumerate([ '270', '0', '90', '180']):
 
             rgb_panoramic[:, i * self.width:(i + 1) * self.width, :] = obs[f'rgb_{rot}'][:, :, :3]   # 320 - 320* np.tan(30/180*np.pi) / np.tan(35/180*np.pi) = 56
-            depth_panoramic[:, i * self.width:(i + 1) * self.width] = obs[f'depth_{rot}']
+            # depth_panoramic[:, i * self.width:(i + 1) * self.width] = obs[f'depth_{rot}']
 
         return {
             'rgb_panoramic': rgb_panoramic,
-            'depth_panoramic': depth_panoramic
+            # 'depth_panoramic': depth_panoramic
         }
 
 
@@ -451,15 +451,15 @@ class Runner:
         node_list = list(graph_map.node_by_id.values())
 
         for edge in list(graph_map.edges):
-            if not edge.draw:
-                pos1 = np.array(edge.nodes[0].pos) if edge.nodes[0].vis_pos is None else np.array(edge.nodes[0].vis_pos)
-                pos2 = np.array(edge.nodes[1].pos) if edge.nodes[1].vis_pos is None else np.array(edge.nodes[1].vis_pos)
-                node_grid1 = self.get_vis_grid_pose(pos1 + bias_position, self.curr_level)
-                node_grid2 = self.get_vis_grid_pose(pos2 + bias_position, self.curr_level)
-                # node_grid1 = self.get_vis_grid_pose(np.array(edge.nodes[0].pos) + bias_position, self.curr_level)
-                # node_grid2 = self.get_vis_grid_pose(np.array(edge.nodes[1].pos) + bias_position, self.curr_level)
-                vis_map = cv2.line(vis_map, node_grid1, node_grid2, (0, 64, 64), 5)
-                edge.draw = True
+            # if not edge.draw:
+            pos1 = np.array(edge.nodes[0].pos) if edge.nodes[0].vis_pos is None else np.array(edge.nodes[0].vis_pos)
+            pos2 = np.array(edge.nodes[1].pos) if edge.nodes[1].vis_pos is None else np.array(edge.nodes[1].vis_pos)
+            node_grid1 = self.get_vis_grid_pose(pos1 + bias_position, self.curr_level)
+            node_grid2 = self.get_vis_grid_pose(pos2 + bias_position, self.curr_level)
+            # node_grid1 = self.get_vis_grid_pose(np.array(edge.nodes[0].pos) + bias_position, self.curr_level)
+            # node_grid2 = self.get_vis_grid_pose(np.array(edge.nodes[1].pos) + bias_position, self.curr_level)
+            vis_map = cv2.line(vis_map, node_grid1, node_grid2, (0, 64, 64), 5)
+            edge.draw = True
 
         # cm_scores = []
         # for node in node_list:
@@ -523,10 +523,10 @@ class Runner:
 
         return vis_map
 
-    def vis_pos_on_topdown_map(self, pos, lv, vis_map=None, color=(255, 0, 0)):
+    def vis_pos_on_topdown_map(self, pos, lv, vis_map=None, color=(255, 0, 0), copy=True):
         if vis_map is None:
             vis_map = self.map[self.curr_level].copy()
-        else:
+        elif copy:
             vis_map = vis_map.copy()
         node_grid = self.get_vis_grid_pose(pos, lv)
         # vis_map = cv2.circle(vis_map, node_grid, 10, (0, 255, 0), -1)
@@ -665,7 +665,7 @@ class Runner:
                                       vis_goal_obj_score=None, vis_obj=None,
                                       visited_positions=None):
         # vis_map = self.map.copy()
-        vis_map = self.cur_graph_map
+        vis_map = np.zeros_like(self.base_map)
         # if vis_obj is not None:
         #     vis_map = self.vis_topdown_obj_map(vis_map, vis_obj)
 
@@ -684,17 +684,18 @@ class Runner:
                                                 # curr_goal_position=curr_goal_position,
                                                 visited_positions=visited_positions)
 
-        self.cur_graph_map = vis_map
+        self.cur_graph_map = vis_map.copy()
         # mask = self.cur_graph_map.astype(bool)
-        mask = np.repeat(np.sum(self.cur_graph_map, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
-        self.base_map[mask] = cv2.addWeighted(self.base_map, 0., self.cur_graph_map, 1.0, 0)[mask]
+        mask = np.repeat(np.sum(self.cur_graph_map, axis=2).astype(bool)[:, :, np.newaxis], 3, axis=2)
+        vis_map[np.logical_not(mask)] = cv2.addWeighted(self.base_map, 1.0, self.cur_graph_map, 0.0, 0)[
+            np.logical_not(mask)]
 
         if curr_position is not None:
-            vis_map = self.vis_pos_on_topdown_map(curr_position + bias_position, self.curr_level, self.base_map)
+            # vis_map = self.vis_pos_on_topdown_map(curr_position + bias_position, self.curr_level, self.base_map)
+            vis_map = self.vis_pos_on_topdown_map(curr_position + bias_position, self.curr_level, vis_map, copy=False)
         if curr_goal_position is not None:
-            vis_map = self.vis_pos_on_topdown_map(curr_goal_position + bias_position, self.curr_level, vis_map, color=(255, 255, 0))
-
-
+            vis_map = self.vis_pos_on_topdown_map(curr_goal_position + bias_position, self.curr_level, vis_map,
+                                                  color=(255, 255, 0), copy=False)
 
         return vis_map
         # figure, ax = plt.subplots(1, 1, facecolor="whitesmoke")
@@ -1157,14 +1158,14 @@ class Runner:
         return target_position
 
 
-    def update_cand_node_to_graph(self, cur_node, cand_nodes):
+    def update_cand_node_to_graph(self, cur_node, cand_nodes, min_node_dist=None):
         if len(cand_nodes) == 0:
             return
 
         update_graph = False
         cand_node_list = []
         for cand_node_info in cand_nodes:
-            cand_node, add_new_node = self.graph_map.add_single_node(cand_node_info['position'])
+            cand_node, add_new_node = self.graph_map.add_single_node(cand_node_info['position'], min_node_dist=min_node_dist)
             # cand_node = self.graph_map.get_node_by_pos(cand_node_info['position'])
             # if int(cand_node.nodeid) == len(self.graph_map.nodes)-1: ## new node
             self.graph_map.update_node_goal_category(cand_node, self.goal_class_onehot)
@@ -1298,7 +1299,7 @@ class Runner:
 
         spl = success * data['info']['geodesic_distance'] / max(self.path_length, data['info']['geodesic_distance'])
 
-        return success, spl
+        return success, spl, dist
 
     def save_step(self, data_idx, step_idx):
 
@@ -1350,6 +1351,8 @@ class Runner:
         #             break
         #         except habitat_sim.errors.GreedyFollowerError:
         #             continue
+        # except:
+        #     return
 
 
 
@@ -1480,7 +1483,7 @@ class Runner:
                                                      curr_rotation,
                                                      np.array(curr_state.position) - np.array(self.abs_init_position))
                 cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
-                update_garph = self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes)
+                update_garph = self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes, min_node_dist=self.edge_range)  ## more restriction to running add node
                 if self.vis_floorplan:
                     vis_graph_map = self.vis_topdown_map_with_captions(self.graph_map, curr_node=self.cur_node, bias_position=self.abs_init_position)
 
@@ -1575,9 +1578,9 @@ class Runner:
         for epi in self.dataset['episodes']:
             # if goal['info']['geodesic_distance'] < 1.0:
             #     continue
-            if self.args.dataset == 'mp3d' or self.args.dataset == 'hm3d':
-                if abs(epi['start_position'][1] - epi['info']['best_viewpoint_position'][1]) > 1.0:
-                    continue
+            # if self.args.dataset == 'mp3d' or self.args.dataset == 'hm3d':
+            #     if abs(epi['start_position'][1] - epi['info']['best_viewpoint_position'][1]) > 1.0:
+            #         continue
             if epi['object_category'] in self.goal_obj_names:
                 epi['goals'] = self.dataset['goals_by_category']['{}.glb_{}'.format(self.env_name, epi['object_category'])]
                 valid_traj_list.append(epi)
@@ -1615,18 +1618,18 @@ class Runner:
         # for idx in range(self.n_for_env):
 
         success_results = {
-            'total': {'success': 0, 'spl': 0, 'count': 0},
-            'easy': {'success': 0, 'spl': 0, 'count': 0},
-            'medium': {'success': 0, 'spl': 0, 'count': 0},
-            'hard': {'success': 0, 'spl': 0, 'count': 0},
+            'total': {'success': 0, 'spl': 0, 'count': 0, 'dts':0},
+            'easy': {'success': 0, 'spl': 0, 'count': 0, 'dts':0},
+            'medium': {'success': 0, 'spl': 0, 'count': 0, 'dts':0},
+            'hard': {'success': 0, 'spl': 0, 'count': 0, 'dts':0},
         }
-        total_success, total_spl, easy_success, easy_spl, medium_success, medium_spl, hard_success, hard_spl = \
-            [], [], [], [], [], [], [], []
+        total_success, total_spl, total_dts, easy_success, easy_spl, easy_dts, medium_success, medium_spl, medium_dts, hard_success, hard_spl, hard_dts = \
+            [], [], [], [], [], [], [], [], [], [], [], []
 
-        obj_success_results, obj_success_list, obj_spl_list = {}, {}, {}
+        obj_success_results, obj_success_list, obj_spl_list, obj_dts_list = {}, {}, {}, {}
         for obj_name in self.goal_obj_names:
-            obj_success_results[obj_name] = {'success': 0, 'spl': 0, 'count': 0}
-            obj_success_list[obj_name], obj_spl_list[obj_name] = [], []
+            obj_success_results[obj_name] = {'success': 0, 'spl': 0, 'count': 0, 'dts':0}
+            obj_success_list[obj_name], obj_spl_list[obj_name], obj_dts_list = [], [], []
 
 
 
@@ -1643,7 +1646,7 @@ class Runner:
                 epi_length_num[length_idx] += 1
 
 
-            interval = 50
+            interval = 100
 
             while True:
                 epi_length_num_sample = np.zeros([3])
@@ -1759,7 +1762,6 @@ class Runner:
             self.cur_graph_map = np.zeros_like(self.map[self.curr_level])
 
 
-
             if self.args.dataset == 'mp3d' or self.args.dataset == 'hm3d':
                 goal_info = self._sim.semantic_scene.objects[traj['info']['closest_goal_object_id']]
                 self.goal_info = self.update_goal_info(goal_info)
@@ -1772,6 +1774,12 @@ class Runner:
                 self.goal_info['category'] = traj['object_category']
                 # self.goal_info['goal_name'] = traj['object_category']
                 self.goal_class_idx = self.goal_obj_names.index(traj['object_category'])
+
+
+            curr_dist_to_objs, curr_is_valid_point = self.dist_to_objs(self.abs_position)
+            if not curr_is_valid_point:
+                continue
+
 
             ## init graph map
             self.graph_map = GraphMap(self.args)
@@ -1933,7 +1941,7 @@ class Runner:
             last_rotation = agent.get_state().rotation
             if self.args.dataset == 'mp3d' or self.args.dataset == 'hm3d':
                 shortest_path_length = traj['info']['geodesic_distance']
-                success, spl = self.success_evaluation(last_position, traj)
+                success, spl, dts = self.success_evaluation(last_position, traj)
             elif self.args.dataset == 'gibson':
                 last_x = -last_position[2]
                 last_y = -last_position[0]
@@ -1963,18 +1971,23 @@ class Runner:
 
             total_success.append(success)
             total_spl.append(spl)
+            total_dts.append(dts)
             if shortest_path_length < 5.0:
                 easy_success.append(success)
                 easy_spl.append(spl)
+                easy_dts.append(dts)
             elif shortest_path_length < 10.0:
                 medium_success.append(success)
                 medium_spl.append(spl)
+                medium_dts.append(dts)
             else:
                 hard_success.append(success)
                 hard_spl.append(spl)
+                hard_dts.append(dts)
 
             obj_success_list[self.goal_obj_names[self.goal_class_idx]].append(success)
             obj_spl_list[self.goal_obj_names[self.goal_class_idx]].append(spl)
+            # obj_dts_list[self.goal_obj_names[self.goal_class_idx]].append(dts)
 
             result = {
                 'goal object': self.goal_info['category'],
@@ -1993,10 +2006,10 @@ class Runner:
 
             print(
                 f"[{env_idx}/{tot_env_num}] {self.env_name} - [{data_idx}/{max_data_num}], Time : {time.time() - src_start_time} \n"
-                f"         Total - success: {np.mean(total_success)}, spl: {np.mean(total_spl)}, count: {len(total_success)} \n"
-                f"         Easy - success: {np.mean(easy_success)}, spl: {np.mean(easy_spl)}, count: {len(easy_success)} \n"
-                f"         Medium - success: {np.mean(medium_success)}, spl: {np.mean(medium_spl)}, count: {len(medium_success)} \n"
-                f"         Hard - success: {np.mean(hard_success)}, spl: {np.mean(hard_spl)}, count: {len(hard_success)} \n")
+                f"         Total - success: {np.mean(total_success)}, spl: {np.mean(total_spl)}, dts: {np.mean(total_dts)}, count: {len(total_success)} \n"
+                f"         Easy - success: {np.mean(easy_success)}, spl: {np.mean(easy_spl)}, dts: {np.mean(easy_dts)}, count: {len(easy_success)} \n"
+                f"         Medium - success: {np.mean(medium_success)}, spl: {np.mean(medium_spl)}, dts: {np.mean(medium_dts)}, count: {len(medium_success)} \n"
+                f"         Hard - success: {np.mean(hard_success)}, spl: {np.mean(hard_spl)}, dts: {np.mean(hard_dts)}, count: {len(hard_success)} \n")
 
 
 

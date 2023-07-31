@@ -890,7 +890,7 @@ class TopoGCN_v3_2_pano_goalscore(nn.Module):
         self.gcn_layer_num = 10
 
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.5)
+        self.dropout = nn.Dropout(p=0.9)
         self.sigmoid = nn.Sigmoid()
 
         self.feat_enc = nn.Sequential(
@@ -924,7 +924,7 @@ class TopoGCN_v3_2_pano_goalscore(nn.Module):
 
         for i in range(self.gcn_layer_num):
             feat_x = torch.cat([feat_x, goal_feat, info_feat], dim=-1)
-            feat_x = self.relu(self.graph_convs[i](feat_x, adj))
+            feat_x = self.dropout(self.relu(self.graph_convs[i](feat_x, adj)))
 
         feat_x = torch.cat([feat_x, goal_feat], dim=-1)
         pred_dist = self.sigmoid(self.value_layer(feat_x))
@@ -1045,7 +1045,7 @@ class TopoGCN_v4_2_pano_goalscore(nn.Module):
             self.info_dim += 12 * 10  # cm_score
         self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
 
-        self.gcn_layer_num = 10
+        self.gcn_layer_num = 5
 
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.5)
@@ -1081,7 +1081,7 @@ class TopoGCN_v4_2_pano_goalscore(nn.Module):
         feat_x = self.feat_enc(feat_x)
 
         for i in range(self.gcn_layer_num):
-            feat_x = self.relu(self.graph_convs[i](feat_x, adj))
+            feat_x = self.dropout(self.relu(self.graph_convs[i](feat_x, adj)))
 
         feat_x = torch.cat([feat_x, goal_feat], dim=-1)
         pred_dist = self.sigmoid(self.value_layer(feat_x))

@@ -25,7 +25,7 @@ parser.add_argument('--batch-size', type=int, default=512, help="learning rate (
 parser.add_argument('--lr', type=float, default=0.001, help="learning rate (default: 1e-05)")
 parser.add_argument('--momentum', type=float, default=0.9)
 parser.add_argument('--weight_decay', type=float, default=1e-4)
-parser.add_argument('--max-epoch', type=int, default=12, help="maximum epoch for training (default: 60)")
+parser.add_argument('--max-epoch', type=int, default=9, help="maximum epoch for training (default: 60)")
 parser.add_argument('--stepsize', type=int, default=30, help="how many steps to decay learning rate (default: 30)")
 parser.add_argument('--gamma', type=float, default=0.1, help="learning rate decay (default: 0.1)")
 parser.add_argument('--beta', type=float, default=0.01, help="weight for summary length penalty term (default: 0.01)")
@@ -36,8 +36,8 @@ parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to u
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
-# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0704/21cat_relative_pose_step_by_step_pano_edge2.0', type=str)
+# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0729/21cat_relative_pose_step_by_step_pano_connect_edge1_v2', type=str)
 # parser.add_argument('--data-dir_aug', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cmv2', type=str)
 # parser.add_argument('--data-dir_aug', default=[
 #                                               '/data2/hwing/Dataset/cm_graph/mp3d/0622/no_rot_bias_step_by_step_v2',
@@ -48,8 +48,8 @@ parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/07
 parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_panov4_2_layer10_hidden{}_goalscore_w_adjmtx_valueloss{}_adjloss{}_10hoploss{}_10hopsignloss{}_{}_maxdist{}_lr{}', type=str)
-parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_lossv6', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1v2_panov3_2_layer10_hidden{}_goalscore_w_adjmtx_valueloss{}_adjloss{}_10hoploss{}_10hopsignloss{}_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_edge1v2', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
 parser.add_argument('--checkpoints', type=str, default=None)
@@ -62,7 +62,7 @@ args = parser.parse_args()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-from model_value_graph_0607 import TopoGCN_v2_pano_goalscore as Model
+from model_value_graph_0607 import TopoGCN_v3_2_pano_goalscore as Model
 
 import torch
 import torch.nn as nn
@@ -278,7 +278,7 @@ def main():
 
     # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
     # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.999 ** epoch)
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: (0.1**(1/(train_batch_num*4))) ** epoch)
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: (0.1**(1/(train_batch_num*3))) ** epoch)
 
     mse = nn.MSELoss()
     bce = nn.BCEWithLogitsLoss()
@@ -931,7 +931,7 @@ def eval(checkpoint_path):
 
 if __name__ == '__main__':
 
-    # main()
+    main()
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0610/0610_v2_1_use_cm_maxdist30.0_lr0.001/model_25.pth')
     # eval('/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0616/0616_combv2_modelv2_1_use_cm_maxdist30.0_lr0.0001/model_20.pth')
     # eval('/home/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0701/0701_relpose_stepbystep_pano_goalscore_use_cm_maxdist30.0_lr0.01/model_20.pth')
@@ -941,4 +941,4 @@ if __name__ == '__main__':
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_0716/0716_mp3d21_panov2_goalscore_wadjmtx_adjloss0.5_use_cm_maxdist30.0_lr0.01/model_10.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-19/15-28_mp3d21_panov2_goalscore_wadjmtx_adjloss0.0_use_cm_maxdist30.0_lr0.01/model_10.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-21/02-12_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_100.0_use_cm_maxdist30.0_lr0.0001/model_10.pth')
-    eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-20/20-35_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_100.0_use_cm_maxdist30.0_lr0.01/model_10.pth')
+    # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-20/20-35_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_100.0_use_cm_maxdist30.0_lr0.01/model_10.pth')
