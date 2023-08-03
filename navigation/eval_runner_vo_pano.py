@@ -2693,7 +2693,7 @@ class Runner:
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
 
-            self.save_rgbd_video(self.rgb_list, self.depth_list, save_dir)
+            # self.save_rgbd_video(self.rgb_list, self.depth_list, save_dir)
             # self.save_semantic_video(self.semantic_list, self.args.save_dir, self.env_name, data_idx)
             #
             # self.save_obj_data(obj_data, self.args.save_dir, self.env_name, data_idx, tot=True)
