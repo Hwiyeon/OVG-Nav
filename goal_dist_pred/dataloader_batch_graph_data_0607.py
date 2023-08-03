@@ -797,7 +797,7 @@ class Batch_traj_DataLoader_pano_goalscore_minmax_diff():
         # min_max_mtx = torch.zeros_like(adj_mtx)
         # min_max_mtx[torch.argmin(node_goal_dists), torch.argmax(node_goal_dists)] = 1
         hop_mtx = torch.Tensor(adj_mtx)
-        for i in range(9):
+        for i in range(self.args.gcn_layers-1):
             hop_mtx = hop_mtx @ adj_mtx
         min_max_mtx = (hop_mtx > 0).float()
 

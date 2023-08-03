@@ -887,7 +887,7 @@ class TopoGCN_v3_2_pano_goalscore(nn.Module):
             self.info_dim += 12 * 10  # cm_score
         self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
 
-        self.gcn_layer_num = 10
+        self.gcn_layer_num = args.gcn_layers
 
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.9)
@@ -1045,10 +1045,10 @@ class TopoGCN_v4_2_pano_goalscore(nn.Module):
             self.info_dim += 12 * 10  # cm_score
         self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
 
-        self.gcn_layer_num = 5
+        self.gcn_layer_num = args.gcn_layers
 
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.5)
+        self.dropout = nn.Dropout(p=0.8)
         self.sigmoid = nn.Sigmoid()
 
         self.feat_enc = nn.Sequential(

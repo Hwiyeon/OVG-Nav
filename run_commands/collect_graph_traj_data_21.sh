@@ -2,7 +2,7 @@
 
 cd ../
 
-#python navigation/data_collect_21.py --gpu_list '1' --run_type 'val' &
+python navigation/data_collect_21.py --gpu_list '1' --run_type 'val' --data_split_max 1 &
 python navigation/data_collect_21.py --gpu_list '1' --run_type 'train' --data_split 0 &
 python navigation/data_collect_21.py --gpu_list '1' --run_type 'train' --data_split 1 &
 python navigation/data_collect_21.py --gpu_list '1' --run_type 'train' --data_split 2 &
@@ -26,9 +26,9 @@ python navigation/data_collect_21.py --gpu_list '6' --run_type 'train' --data_sp
 python navigation/data_collect_21.py --gpu_list '7' --run_type 'train' --data_split 20 &
 python navigation/data_collect_21.py --gpu_list '7' --run_type 'train' --data_split 21 &
 python navigation/data_collect_21.py --gpu_list '7' --run_type 'train' --data_split 22 &
-#python navigation/data_collect_21.py --gpu_list '8' --run_type 'train' --data_split 23 &
-#python navigation/data_collect_21.py --gpu_list '8' --run_type 'train' --data_split 24 &
-#python navigation/data_collect_21.py --gpu_list '8' --run_type 'train' --data_split 25 &
+python navigation/data_collect_21.py --gpu_list '8' --run_type 'train' --data_split 23 &
+python navigation/data_collect_21.py --gpu_list '8' --run_type 'train' --data_split 24 &
+python navigation/data_collect_21.py --gpu_list '8' --run_type 'train' --data_split 25 &
 #python navigation/data_collect.py --gpu_list '6' --run_type 'train' --data_split 26 &
 #python navigation/data_collect.py --gpu_list '7' --run_type 'train' --data_split 27 &
 #python navigation/data_collect.py --gpu_list '7' --run_type 'train' --data_split 28 &

@@ -13,7 +13,7 @@ import argparse
 parser = argparse.ArgumentParser()
 
 ## eval configs ##
-parser.add_argument("--gpu_list", type=str, default="1")
+parser.add_argument("--gpu_list", type=str, default="6")
 parser.add_argument("--model_gpu", type=str, default="0")
 parser.add_argument("--sim_gpu", type=str, default="0")
 # parser.add_argument("--data", type=str, default="gibosn")
@@ -21,9 +21,9 @@ parser.add_argument("--n_for_env", type=int, default=2000)
 parser.add_argument("--max_step", type=int, default=500)
 parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
-parser.add_argument("--data_split", type=int, default=0)
-parser.add_argument("--data_split_max", type=int, default=1)
-parser.add_argument("--save_dir", type=str, default="/disk4/hwing/Dataset/cm_graph/{}/0729/21cat_relative_pose_step_by_step_pano_connect_edge1_v2")
+parser.add_argument("--data_split", type=int, default=5)
+parser.add_argument("--data_split_max", type=int, default=26)
+parser.add_argument("--save_dir", type=str, default="/disk4/hwing/Dataset/cm_graph/{}/0802/21cat_relative_pose_step_by_step_pano_connect_edge1_maxrange")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -241,8 +241,8 @@ def main(env_list, dataset_list):
         dataset = json.loads(dataset.decode('utf-8'))
 
         ### --- for debug --- ###
-        if os.path.exists(f'{args.save_dir}/{args.run_type}/{scene_name}'):
-            continue
+        # if os.path.exists(f'{args.save_dir}/{args.run_type}/{scene_name}'):
+        #     continue
 
 
         demo_runner = runner.Runner(args, settings, det_COI, dataset, data_type=args.run_type)

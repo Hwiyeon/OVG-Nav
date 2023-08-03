@@ -12,7 +12,7 @@ import argparse
 parser = argparse.ArgumentParser()
 
 ## eval configs ##
-parser.add_argument("--gpu_list", type=str, default="6")
+parser.add_argument("--gpu_list", type=str, default="9")
 parser.add_argument("--model_gpu", type=str, default="0")
 parser.add_argument("--sim_gpu", type=str, default="0")
 # parser.add_argument("--data", type=str, default="gibosn")
@@ -20,10 +20,10 @@ parser.add_argument("--n_for_env", type=int, default=2000)
 parser.add_argument("--max_step", type=int, default=500)
 parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
-parser.add_argument("--data_split", type=int, default=1)
-parser.add_argument("--data_split_max", type=int, default=4)
-# parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/0726_cat21/vo_3obs_20-35_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_100.0_use_cm_maxdist30.0_lr0.01")
-parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/0726_21/test_vo")
+parser.add_argument("--data_split", type=int, default=0)
+parser.add_argument("--data_split_max", type=int, default=11)
+parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/test/test")
+# parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/0801_cat21/vo_nodist_3obs_01-11_mp3d21_edge1v2_panov3_2_layer10_hidden512_goalscore_w_adjmtx_valueloss1.0_adjloss1.0_10hoploss1.0_10hopsignloss0.001_use_cm_maxdist30.0_lr0.001")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -85,8 +85,9 @@ parser.add_argument("--COMET_model", type=str, default="/home/hwing/Projects/OVG
 
 # parser.add_argument("--value_model", type=str, default='/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0610/0610_v2_1_use_cm_maxdist30.0_lr0.001/model_25.pth')
 # parser.add_argument("--value_model", type=str, default='/data1/hwing/Projects/offline_objgoal/goal_dist_pred/logs/cm_0616/0616_combv2_modelv2_1_use_cm_maxdist30.0_lr0.0001/model_20.pth')
-parser.add_argument("--value_model", type=str, default='/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-20/20-35_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_100.0_use_cm_maxdist30.0_lr0.01/model_10.pth')
+parser.add_argument("--value_model", type=str, default='/home/hwing/Projects/OVG-Nav/goal_dist_pred/models/01-11_mp3d21_edge1v2_panov3_2_layer10_hidden512_goalscore_w_adjmtx_valueloss1.0_adjloss1.0_10hoploss1.0_10hopsignloss0.001_use_cm_maxdist30.0_lr0.001/model_9.pth')
 parser.add_argument('--vis_feat_dim', default=512, type=int)
+parser.add_argument('--gcn_layers', default=10, type=int)
 parser.add_argument('--use_cm_score', default=True, type=bool)
 
 

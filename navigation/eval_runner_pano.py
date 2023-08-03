@@ -59,9 +59,10 @@ from modules.detector.rednet_semantic_prediction import SemanticPredRedNet
 from modules.free_space_model.inference import FreeSpaceModel
 from modules.comet_relation.inference import CommonSenseModel
 from modules.visual_odometry.keypoint_matching import KeypointMatching
-from goal_dist_pred.model_value_graph_0607 import TopoGCN_v2_pano_goalscore as ValueModel
+from goal_dist_pred.model_value_graph_0607 import TopoGCN_v3_2_pano_goalscore as ValueModel
 
 from navigation.local_navigation import LocalNavigation
+from utils.graph_utils.cand_node_utils import get_range_cand_nodes
 
 
 
@@ -200,6 +201,8 @@ class Runner:
         self.vis_floorplan = args.vis_floorplan
         self.use_oracle = args.use_oracle
         self.cm_type = args.cm_type  ### 'comet or mp3d'
+
+        self.cand_node_frame = get_range_cand_nodes(int(args.sensing_range/self.edge_range), self.edge_range)
 
 
 
@@ -993,7 +996,7 @@ class Runner:
             dirc_imgs.append(dirc_img)
         return np.array(dirc_imgs)
 
-    def get_cand_node_dirc(self, pano_rgb, depth, pos, rot, vis_pos=None):
+    def get_cand_node_dirc0(self, pano_rgb, depth, pos, rot, vis_pos=None):
         ## rot is rotation vector
         cur_heading_idx = int(np.round(-rot[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
         cand_nodes = []
@@ -1080,6 +1083,97 @@ class Runner:
                     # cand_nodes[i]['value'] = value[i]
 
                 cand_nodes[i]['clip_feat'] = cand_image_feat[i]
+                for j in range(i + 1, len(cand_nodes)):
+                    if self.local_mapper.is_traversable(curr_local_map, cand_nodes[i]['pose_on_map'],
+                                                        cand_nodes[j]['pose_on_map']):
+                        cand_nodes[i]['cand_edge'].append(j)
+
+                # if cand_nodes[i]['next_node'] is not None:
+                #     cand_nodes[i]['next_node']['clip_feat'] = cand_image_feat[i]
+                # cand_nodes[i]['cm_score'] = cm_score[i]
+                valid_cand_nodes.append(cand_nodes[i])
+
+        return valid_cand_nodes
+
+    def get_cand_node_dirc(self, pano_rgb, depth, pos, rot, vis_pos=None):
+        ## rot is rotation vector
+        cand_nodes = []
+        self.local_mapper.reset_map()
+        depth_cm = depth * 100
+        pose_origin_for_map = (pos[0], pos[2], 0)  # (x, y, o)
+        pose_for_map = (pos[0], pos[2], rot[1])  # (x, y, o)
+        pose_on_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(pose_for_map, pose_origin_for_map)
+        pose_on_map = self.local_mapper.get_map_grid_from_sim_pose_cm(pose_on_map_cm)
+
+        ### get current local map ###
+        curr_local_map, curr_exp_map, _ = self.local_mapper.update_map(depth_cm, pose_on_map_cm)
+        curr_local_map = (skimage.morphology.binary_dilation(
+            curr_local_map, skimage.morphology.disk(2)
+        )== True).astype(float)
+
+
+        free_cand_nodes = np.zeros(12)
+        angle_bias = np.where(self.cand_angle == -30)[0][0]
+        free_cand_nodes[angle_bias] = 1
+        free_cand_nodes[angle_bias + 1] = 1
+        free_cand_nodes[angle_bias + 2] = 1
+
+        cand_node_poses = self.cand_node_frame['poses']
+        cand_node_rots = self.cand_node_frame['rots']
+
+        rot_op = R.from_rotvec(rot)
+        rot_op.as_matrix()
+        cand_node_poses = rot_op.apply(cand_node_poses)
+
+        vis_rot_op = R.from_rotvec(self.abs_init_rotation)
+        vis_rot_op.as_matrix()
+        vis_poses = vis_rot_op.apply(cand_node_poses)
+
+
+        for i in range(len(cand_node_poses)):
+            rot_vec = rot + cand_node_rots[i]
+            cand_pos = pos + cand_node_poses[i]
+            cand_rot = rot_vec
+            cur_heading_idx = int(np.round(-rot_vec[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
+
+
+            ## map coordinate for checking free space
+            cand_pose_for_map = (cand_pos[0], cand_pos[2], rot_vec[1])
+            cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, pose_origin_for_map)
+            cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
+            if self.local_mapper.is_traversable(curr_local_map, pose_on_map, cand_pose_on_grid_map):
+                cand_node_info = {'position': cand_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx,
+                                  'pose_on_map': cand_pose_on_grid_map, 'cand_edge': []}
+
+                cur_rel_heading = (int(np.round(np.rad2deg(cand_node_rots[i][1]) / self.cand_rot_angle))+ 1) % self.rot_num
+                cand_node_info['rel_heading'] = cur_rel_heading
+
+                vis_cand_pos = vis_pos + vis_poses[i]
+                cand_node_info['vis_position'] = vis_cand_pos
+
+                cand_node_info['next_node'] = None
+
+                cand_nodes.append(cand_node_info)
+                # free_cand_nodes[angle_bias + i] = 1
+
+        # cand_nodes.append({'position': cand_pos, 'rotation': cand_rot})
+        #
+        pano_split_images = self.get_dirc_imgs_from_pano(pano_rgb)
+        cand_split_images = pano_split_images[np.where(free_cand_nodes == 1)[0]]
+
+        valid_cand_nodes = []
+        # similarity, cand_split_feat = self.common_sense_model.clip.get_text_image_sim(text, cand_split_images,
+        #                                                                               out_img_feat=True)
+        if len(cand_split_images) > 0:
+            cand_image_feat = self.common_sense_model.clip.get_image_feat(cand_split_images)
+            # cm_score, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat, cand_image_feat, feat=True)
+            for i in range(len(cand_nodes)):
+                # if not self.graph_map.check_node_exist(cand_nodes[i]['position']):
+                    # value = np.round(np.max(similarity, axis=1), 3)
+                    # cand_nodes[i]['clip_feat'] = cand_split_feat[i]
+                    # cand_nodes[i]['value'] = value[i]
+
+                cand_nodes[i]['clip_feat'] = cand_image_feat[cand_nodes[i]['rel_heading']]
                 for j in range(i + 1, len(cand_nodes)):
                     if self.local_mapper.is_traversable(curr_local_map, cand_nodes[i]['pose_on_map'],
                                                         cand_nodes[j]['pose_on_map']):
@@ -1241,9 +1335,10 @@ class Runner:
             # dist score
             temp_path, temp_path_length = self.get_shortest_path(cur_node.nodeid, id, self.graph_map.adj_mtx)
             if len(temp_path) == 0:
-                dist_score = -1000
+                dist_score = -9999
             else:
-                dist_score = max(1 - temp_path_length / max_dist, 0)
+                # dist_score = max(1 - temp_path_length / max_dist, 0)
+                dist_score = 0
             dist_scores.append(dist_score)
 
 
@@ -1265,7 +1360,7 @@ class Runner:
             # combined_score = 0.5 * softmax_cm_scores + 0.5 * dist_scores
 
             obj_scores = np.array(obj_scores)
-            combined_score = obj_scores + 0.05 * dist_scores
+            combined_score = obj_scores + dist_scores
             # combined_score = obj_scores
             node_idx = np.argmax(combined_score)
             cand_node = self.graph_map.get_node_by_id(ids[node_idx])
@@ -2629,21 +2724,21 @@ class Runner:
             data_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}"
             if not os.path.exists(data_dir): os.makedirs(data_dir)
 
-            # self.do_panoramic_action(self.cur_node)
-            # self.do_time_steps(data_idx)
+            self.do_panoramic_action(self.cur_node)
+            self.do_time_steps(data_idx)
 
-            try:
-
-
-                self.do_panoramic_action(self.cur_node)
-                self.do_time_steps(data_idx)
-
-            except KeyboardInterrupt:
-                print("KeyboardInterrupt")
-                break
-
-            except:
-                pass
+            # try:
+            #
+            #
+            #     self.do_panoramic_action(self.cur_node)
+            #     self.do_time_steps(data_idx)
+            #
+            # except KeyboardInterrupt:
+            #     print("KeyboardInterrupt")
+            #     break
+            #
+            # except:
+            #     pass
 
 
 

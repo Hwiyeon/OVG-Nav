@@ -3,7 +3,7 @@ sys.path.append('/home/hwing/Projects/OVG-Nav')
 
 import os
 import json
-from utils.obj_category_info import mp3d_goal_obj_names, gibson_goal_obj_names, obj_names
+from utils.obj_category_info import mp3d_goal_obj_names, gibson_goal_obj_names, rednet_obj_names
 
 def collect_eval_results(eval_name, obj_type='mp3d'):
     success_results = {
@@ -18,7 +18,7 @@ def collect_eval_results(eval_name, obj_type='mp3d'):
     elif obj_type == 'mp3d':
         goal_obj_names = mp3d_goal_obj_names
     elif obj_type == 'mp3d_21':
-        goal_obj_names = obj_names
+        goal_obj_names = rednet_obj_names
 
     obj_success_results = {}
     for obj_name in goal_obj_names:
@@ -57,6 +57,6 @@ def collect_eval_results(eval_name, obj_type='mp3d'):
 
 
 if __name__ == '__main__':
-    success_results = collect_eval_results('/disk1/hwing/Dataset/cm_graph/mp3d/val/0729_cat21/3obs_20-35_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_100.0_use_cm_maxdist30.0_lr0.01',
+    success_results = collect_eval_results('/disk1/hwing/Dataset/cm_graph/mp3d/val/0801_cat21/nodist_1obs_01-11_mp3d21_edge1v2_panov3_2_layer10_hidden512_goalscore_w_adjmtx_valueloss1.0_adjloss1.0_10hoploss1.0_10hopsignloss0.001_use_cm_maxdist30.0_lr0.001',
                                            obj_type='mp3d_21')
     print(success_results)

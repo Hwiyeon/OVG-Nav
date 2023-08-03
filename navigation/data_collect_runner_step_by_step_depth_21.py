@@ -48,6 +48,7 @@ import time
 import json
 from utils.visualizations.maps import get_topdown_map_from_sim, to_grid, TopdownView
 from utils.graph_utils.graph_pano_cs import GraphMap
+from utils.graph_utils.cand_node_utils import get_range_cand_nodes
 from utils.obj_category_info import assign_room_category, obj_names, gibson_goal_obj_names, mp3d_goal_obj_names, room_names, mp3d_room_names
 
 from tqdm import tqdm
@@ -167,6 +168,8 @@ class Runner:
 
         self.vis_floorplan = args.vis_floorplan
         self.use_oracle = args.use_oracle
+
+        self.cand_node_frame = get_range_cand_nodes(int(args.sensing_range/self.edge_range), self.edge_range)
 
 
 
@@ -917,7 +920,7 @@ class Runner:
 
 
 
-    def get_cand_node_dirc(self, pano_rgb, depth, pos, rot, vis_pos=None):
+    def get_cand_node_dirc0(self, pano_rgb, depth, pos, rot, vis_pos=None):
         ## rot is rotation vector
         cur_heading_idx = int(np.round(-rot[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
         cand_nodes = []
@@ -1010,6 +1013,104 @@ class Runner:
                                                         cand_nodes[j]['pose_on_map']):
                         cand_nodes[i]['cand_edge'].append(j)
 
+                valid_cand_nodes.append(cand_nodes[i])
+
+        return valid_cand_nodes
+
+    def get_cand_node_dirc(self, pano_rgb, depth, pos, rot, vis_pos=None):
+        ## rot is rotation vector
+        cand_nodes = []
+        # max_depth_angle = []
+        # max_depth_angle.append(np.max(depth[:,:int(self.vo_width/2)]))
+        # temp_bias = int(np.tan(np.deg2rad(30)) / np.tan(np.deg2rad(35)) * int(self.vo_width/2))
+        # max_depth_angle.append(np.max(depth[:,int(self.vo_width/2)-temp_bias:int(self.vo_width/2)+temp_bias]))
+        # max_depth_angle.append(np.max(depth[:,int(self.vo_width/2):]))
+
+
+        self.local_mapper.reset_map()
+        depth_cm = depth * 100
+        pose_origin_for_map = (pos[0], pos[2], 0)  # (x, y, o)
+        pose_for_map = (pos[0], pos[2], rot[1])  # (x, y, o)
+        pose_on_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(pose_for_map, pose_origin_for_map)
+        pose_on_map = self.local_mapper.get_map_grid_from_sim_pose_cm(pose_on_map_cm)
+
+        ### get current local map ###
+        curr_local_map, curr_exp_map, _ = self.local_mapper.update_map(depth_cm, pose_on_map_cm)
+        curr_local_map = (skimage.morphology.binary_dilation(
+            curr_local_map, skimage.morphology.disk(2)
+        )== True).astype(float)
+
+
+        free_cand_nodes = np.zeros(12)
+        angle_bias = np.where(self.cand_angle == -30)[0][0]
+        free_cand_nodes[angle_bias] = 1
+        free_cand_nodes[angle_bias + 1] = 1
+        free_cand_nodes[angle_bias + 2] = 1
+
+        cand_node_poses = self.cand_node_frame['poses']
+        cand_node_rots = self.cand_node_frame['rots']
+
+        rot_op = R.from_rotvec(rot)
+        rot_op.as_matrix()
+        cand_node_poses = rot_op.apply(cand_node_poses)
+
+        vis_rot_op = R.from_rotvec(self.abs_init_rotation)
+        vis_rot_op.as_matrix()
+        vis_poses = vis_rot_op.apply(cand_node_poses)
+
+
+        for i in range(len(cand_node_poses)):
+            rot_vec = rot + cand_node_rots[i]
+            cand_pos = pos + cand_node_poses[i]
+            cand_rot = rot_vec
+            cur_heading_idx = int(np.round(-rot_vec[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
+
+
+            ## map coordinate for checking free space
+            cand_pose_for_map = (cand_pos[0], cand_pos[2], rot_vec[1])
+            cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, pose_origin_for_map)
+            cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
+            if self.local_mapper.is_traversable(curr_local_map, pose_on_map, cand_pose_on_grid_map):
+                cand_node_info = {'position': cand_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx,
+                                  'pose_on_map': cand_pose_on_grid_map, 'cand_edge': []}
+
+                cur_rel_heading = (int(np.round(np.rad2deg(cand_node_rots[i][1]) / self.cand_rot_angle))+ 1) % self.rot_num
+                cand_node_info['rel_heading'] = cur_rel_heading
+
+                vis_cand_pos = vis_pos + vis_poses[i]
+                cand_node_info['vis_position'] = vis_cand_pos
+
+                cand_node_info['next_node'] = None
+
+                cand_nodes.append(cand_node_info)
+                # free_cand_nodes[angle_bias + i] = 1
+
+        # cand_nodes.append({'position': cand_pos, 'rotation': cand_rot})
+        #
+        pano_split_images = self.get_dirc_imgs_from_pano(pano_rgb)
+        cand_split_images = pano_split_images[np.where(free_cand_nodes == 1)[0]]
+
+        valid_cand_nodes = []
+        # similarity, cand_split_feat = self.common_sense_model.clip.get_text_image_sim(text, cand_split_images,
+        #                                                                               out_img_feat=True)
+        if len(cand_split_images) > 0:
+            cand_image_feat = self.common_sense_model.clip.get_image_feat(cand_split_images)
+            # cm_score, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat, cand_image_feat, feat=True)
+            for i in range(len(cand_nodes)):
+                # if not self.graph_map.check_node_exist(cand_nodes[i]['position']):
+                    # value = np.round(np.max(similarity, axis=1), 3)
+                    # cand_nodes[i]['clip_feat'] = cand_split_feat[i]
+                    # cand_nodes[i]['value'] = value[i]
+
+                cand_nodes[i]['clip_feat'] = cand_image_feat[cand_nodes[i]['rel_heading']]
+                for j in range(i + 1, len(cand_nodes)):
+                    if self.local_mapper.is_traversable(curr_local_map, cand_nodes[i]['pose_on_map'],
+                                                        cand_nodes[j]['pose_on_map']):
+                        cand_nodes[i]['cand_edge'].append(j)
+
+                # if cand_nodes[i]['next_node'] is not None:
+                #     cand_nodes[i]['next_node']['clip_feat'] = cand_image_feat[i]
+                # cand_nodes[i]['cm_score'] = cm_score[i]
                 valid_cand_nodes.append(cand_nodes[i])
 
         return valid_cand_nodes
@@ -1171,7 +1272,7 @@ class Runner:
             self.graph_map.update_node_goal_category(cand_node, self.goal_class_onehot)
             self.graph_map.update_node_clip_feat(cand_node, cand_node_info['clip_feat'], cand_node_info['heading_idx'])
             self.graph_map.update_node_vis_feat(cand_node)
-            self.graph_map.update_node_max_depth(cand_node, cand_node_info['max_depth'], cand_node_info['heading_idx'])
+            # self.graph_map.update_node_max_depth(cand_node, cand_node_info['max_depth'], cand_node_info['heading_idx'])
 
             torch.set_num_threads(1)
             goal_cm_scores, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat,
@@ -1691,23 +1792,25 @@ class Runner:
                             cv2.cvtColor(self.goal_map[lv][obj_name], cv2.COLOR_BGR2RGB))
         print("Save floor map done")
 
+        exist_data_list = np.sort(os.listdir(f"{self.args.save_dir}/{self.data_type}/{self.env_name}"))
         for traj in valid_traj_list[0:len(valid_traj_list)]:
             data_idx += 1
             if data_idx > max_data_num:
                 break
 
-            data_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/{self.env_name}_{data_idx:04d}"
-            if os.path.exists(data_dir):
-                if os.path.exists(os.path.join(data_dir, f"{self.env_name}_{data_idx:04d}.npy")):
+            # data_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/{self.env_name}_{data_idx:04d}"
+            data_exist = False
+            for data_name in exist_data_list:
+                if f"{self.env_name}_{data_idx:04d}" in data_name:
                     print(f"File Exit {self.env_name}_{data_idx:04d}")
-                    exist_data = np.load(os.path.join(data_dir, f"{self.env_name}_{data_idx:04d}.npy"), allow_pickle=True).item()
-                    if len(exist_data['action']) <= 500:
-                        data_idx += 1
-                        continue
-                    else:
-                        print(f"Invalid data {self.env_name}_{data_idx:04d} : too long trajectory > 500")
+                    # if len(exist_data['action']) <= 500:
+                    # data_idx += 1
+                    data_exist = True
+                    break
+            if data_exist:
+                continue
 
-                os.system(f"rm -r {data_dir}")
+
 
             if self.args.dataset == 'gibson':
                 selem = skimage.morphology.disk(2)
