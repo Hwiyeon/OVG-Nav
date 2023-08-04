@@ -694,7 +694,7 @@ class Runner:
                                                 # curr_goal_position=curr_goal_position,
                                                 visited_positions=visited_positions)
 
-        self.cur_graph_map = vis_map.copy()
+        self.cur_graph_map = vis_map
         mask = np.repeat(np.sum(self.cur_graph_map, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
         vis_map[np.logical_not(mask)] = cv2.addWeighted(self.base_map, 1.0, self.cur_graph_map, 0.0, 0)[np.logical_not(mask)]
 
@@ -1168,10 +1168,10 @@ class Runner:
                                            node_cm_scores[i]], dim=0)
 
         ## -- compute edge weight -- ##
-        adj_mtx = np.copy(self.graph_map.adj_mtx)
+        adj_mtx = torch.Tensor(self.graph_map.adj_mtx)
         mask = adj_mtx > 0
         adj_mtx[mask] = 1 / (1 + np.exp(-1 / adj_mtx[mask]))
-        adj_mtx = torch.Tensor(adj_mtx) + torch.eye(graph_size)
+        adj_mtx = adj_mtx + torch.eye(graph_size)
 
         node_features, node_goal_features, node_info_features, adj_mtx = \
                                     node_features.to(f'cuda:{self.args.model_gpu}'), \
@@ -1185,7 +1185,7 @@ class Runner:
 
         for i, node in enumerate(nodes):
             node.pred_value = object_value[i]
-
+        del adj_mtx
         return object_value
 
 

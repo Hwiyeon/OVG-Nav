@@ -23,7 +23,7 @@ parser.add_argument('--sign_loss_cf', default=0.05, type=float)
 
 
 # Optimization options
-parser.add_argument('--batch-size', type=int, default=256, help="learning rate (default: 1e-05)")
+parser.add_argument('--batch-size', type=int, default=512, help="learning rate (default: 1e-05)")
 parser.add_argument('--lr', type=float, default=0.001, help="learning rate (default: 1e-05)")
 parser.add_argument('--momentum', type=float, default=0.9)
 parser.add_argument('--weight_decay', type=float, default=1e-4)
@@ -34,24 +34,26 @@ parser.add_argument('--beta', type=float, default=0.01, help="weight for summary
 
 # Misc
 parser.add_argument('--seed', type=int, default=100, help="random seed (default: 1)")
-parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
+parser.add_argument('--gpu', type=str, default='1', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
-# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0802/21cat_relative_pose_step_by_step_pano_connect_edge1_maxrange', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
+# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0803/21cat_relative_pose_step_by_step_pano_connect_v2', type=str)
+# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0802/21cat_relative_pose_step_by_step_pano_connect_edge1_maxrange', type=str)
 # parser.add_argument('--data-dir_aug', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cmv2', type=str)
-# parser.add_argument('--data-dir_aug', default=[
-#                                               '/data2/hwing/Dataset/cm_graph/mp3d/0622/no_rot_bias_step_by_step_v2',
+parser.add_argument('--data-dir_aug', default=[
+                                                '/disk4/hwing/Dataset/cm_graph/mp3d/0803/21cat_relative_pose_step_by_step_pano_connect_v2',
+                                              '/disk4/hwing/Dataset/cm_graph/mp3d/0729/21cat_relative_pose_step_by_step_pano_connect_edge1_v2',
                                                # '/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cm',
                                                # '/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm',
                                                # '/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2',
-                                               # ])
-parser.add_argument('--data-dir_aug', default=None, type=str)
+                                               ])
+# parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1_maxrange_panov4_2_layer{}_hidden{}_goalscore_w_adjmtx_valueloss{}_adjloss{}_hoploss{}_signloss{}_{}_maxdist{}_lr{}', type=str)
-parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_edge1_maxrange', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1_datav2_aug2_panov4_2_layer{}_hidden{}_goalscore_w_adjmtx_valueloss{}_adjloss{}_hoploss_visited{}_signloss{}_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_edge1v1', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
 parser.add_argument('--checkpoints', type=str, default=None)
