@@ -2363,8 +2363,38 @@ class Runner:
                                 cv2.cvtColor(self.goal_map[lv][obj_name], cv2.COLOR_BGR2RGB))
             print("Save floor map done")
 
+            ## -- load results -- ##
+            if not os.path.exists(f'{self.args.save_dir}/{self.data_type}/results'):
+                os.makedirs(f'{self.args.save_dir}/{self.data_type}/results')
+            elif os.path.isfile(f'{self.args.save_dir}/{self.data_type}/results/{self.env_name}_result.json'):
+                with open(f'{self.args.save_dir}/{self.data_type}/results/{self.env_name}_result.json', 'rb') as file:
+                    results = json.load(file)
+                for cnt in range(results['total']['count']):
+                    total_success.append(results['total']['success'])
+                    total_spl.append(results['total']['spl'])
+                    total_dts.append(results['total']['dts'])
+                for cnt in range(results['easy']['count']):
+                    easy_success.append(results['easy']['success'])
+                    easy_spl.append(results['easy']['spl'])
+                    easy_dts.append(results['easy']['dts'])
+                for cnt in range(results['medium']['count']):
+                    medium_success.append(results['medium']['success'])
+                    medium_spl.append(results['medium']['spl'])
+                    medium_dts.append(results['medium']['dts'])
+                for cnt in range(results['hard']['count']):
+                    hard_success.append(results['hard']['success'])
+                    hard_spl.append(results['hard']['spl'])
+                    hard_dts.append(results['hard']['dts'])
+                for obj_name in self.goal_obj_names:
+                    for cnt in range(results[obj_name]['count']):
+                        obj_success_list[obj_name].append(results[obj_name]['success'])
+                        obj_spl_list[obj_name].append(results[obj_name]['spl'])
+                        obj_dts_list[obj_name].append(results[obj_name]['dts'])
 
-        for traj in valid_traj_list[0:len(valid_traj_list):interval]:
+                data_idx = results['total']['count']
+                print(f"Load results done to data {data_idx}")
+
+        for traj in valid_traj_list[0:len(valid_traj_list):interval][data_idx:]:
             data_idx += 1
             if data_idx > max_data_num:
                 break
@@ -2740,6 +2770,40 @@ class Runner:
                 f"         Medium - success: {np.mean(medium_success)}, spl: {np.mean(medium_spl)}, dts: {np.mean(medium_dts)}, count: {len(medium_success)} \n"
                 f"         Hard - success: {np.mean(hard_success)}, spl: {np.mean(hard_spl)}, dts: {np.mean(hard_dts)}, count: {len(hard_success)} \n")
 
+            if len(total_success) > 0:
+                success_results['total']['success'] = np.mean(total_success)
+                success_results['total']['spl'] = np.mean(total_spl)
+                success_results['total']['dts'] = np.mean(total_dts)
+                success_results['total']['count'] = len(total_success)
+            if len(easy_success) > 0:
+                success_results['easy']['success'] = np.mean(easy_success)
+                success_results['easy']['spl'] = np.mean(easy_spl)
+                success_results['easy']['dts'] = np.mean(easy_dts)
+                success_results['easy']['count'] = len(easy_success)
+            if len(medium_success) > 0:
+                success_results['medium']['success'] = np.mean(medium_success)
+                success_results['medium']['spl'] = np.mean(medium_spl)
+                success_results['medium']['dts'] = np.mean(medium_dts)
+                success_results['medium']['count'] = len(medium_success)
+            if len(hard_success) > 0:
+                success_results['hard']['success'] = np.mean(hard_success)
+                success_results['hard']['spl'] = np.mean(hard_spl)
+                success_results['hard']['dts'] = np.mean(hard_dts)
+                success_results['hard']['count'] = len(hard_success)
+
+            for obj_name in obj_success_list.keys():
+                if len(obj_success_list[obj_name]) > 0:
+                    obj_success = np.mean(obj_success_list[obj_name])
+                    obj_spl = np.mean(obj_spl_list[obj_name])
+                    obj_dts = np.mean(obj_dts_list[obj_name])
+                    obj_count = len(obj_success_list[obj_name])
+                    obj_success_results[obj_name] = {'success': obj_success, 'spl': obj_spl, 'dts': obj_dts,
+                                                     'count': obj_count}
+
+            with open(f'{self.args.save_dir}/{self.data_type}/results/{self.env_name}_result.json', 'wb') as f:
+                success_results.update(obj_success_results)
+                json_data = json.dumps(success_results).encode('utf-8')
+                f.write(json_data)
 
 
         print(f"[{env_idx}/{tot_env_num}] {self.env_name}  Done,   Time : {time.time()-env_start_time}")

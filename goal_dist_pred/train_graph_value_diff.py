@@ -52,7 +52,7 @@ parser.add_argument('--data-dir_aug', default=[
 # parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1_datav2_aug2_panov4_2_layer{}_hidden{}_goalscore_w_adjmtx_valueloss{}_adjloss{}_hoploss_visited{}_signloss{}_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1_datav2_aug2_panov4_2_layer{}_hidden{}_goalscore_wnorm_adjmtx_valueloss{}_adjloss{}_hoploss_visited{}_signloss{}_{}_maxdist{}_lr{}', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_edge1v1', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")

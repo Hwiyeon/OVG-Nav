@@ -793,6 +793,7 @@ class Batch_traj_DataLoader_pano_goalscore_minmax_diff():
         # adj_mtx = torch.Tensor(adj_mtx) + torch.eye(graph_size)
 
         adj_mtx = torch.Tensor(adj_mtx)
+        adj_mtx = adj_mtx / torch.sum(adj_mtx, dim=0).unsqueeze(1)
 
         # min_max_mtx = torch.zeros_like(adj_mtx)
         # min_max_mtx[torch.argmin(node_goal_dists), torch.argmax(node_goal_dists)] = 1
