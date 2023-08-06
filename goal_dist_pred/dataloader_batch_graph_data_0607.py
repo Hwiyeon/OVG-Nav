@@ -793,7 +793,7 @@ class Batch_traj_DataLoader_pano_goalscore_minmax_diff():
         # adj_mtx = torch.Tensor(adj_mtx) + torch.eye(graph_size)
 
         adj_mtx = torch.Tensor(adj_mtx)
-        adj_mtx = adj_mtx / torch.sum(adj_mtx, dim=0).unsqueeze(1)
+        # adj_mtx = adj_mtx / torch.sum(adj_mtx, dim=0).unsqueeze(1)
 
         # min_max_mtx = torch.zeros_like(adj_mtx)
         # min_max_mtx[torch.argmin(node_goal_dists), torch.argmax(node_goal_dists)] = 1
@@ -802,9 +802,9 @@ class Batch_traj_DataLoader_pano_goalscore_minmax_diff():
             hop_mtx = hop_mtx @ adj_mtx
         min_max_mtx = (hop_mtx > 0).float()
 
-        visited_nodes = [int(nodeid) for nodeid in graph_data.visited_node_ids]
-        visited_max_mtx = torch.zeros_like(adj_mtx)
-        visited_max_mtx[visited_nodes] = min_max_mtx[visited_nodes]
+        # visited_nodes = [int(nodeid) for nodeid in graph_data.visited_node_ids]
+        # visited_max_mtx = torch.zeros_like(adj_mtx)
+        # visited_max_mtx[visited_nodes] = min_max_mtx[visited_nodes]
 
         return {
             'node_features': node_features,
@@ -814,7 +814,7 @@ class Batch_traj_DataLoader_pano_goalscore_minmax_diff():
             'node_goal_dists': node_goal_dists,
             'node_pose': node_pose,
             'goal_idx': node_goal_idx,
-            'min_max_mtx': visited_max_mtx,
+            'min_max_mtx': min_max_mtx,
         }
 
 

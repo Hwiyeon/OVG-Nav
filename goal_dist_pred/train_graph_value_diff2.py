@@ -38,21 +38,21 @@ parser.add_argument('--gpu', type=str, default='1', help="which gpu devices to u
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
-# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0803/21cat_relative_pose_step_by_step_pano_connect_v2', type=str)
+# parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0803/21cat_relative_pose_step_by_step_pano_connect_v2', type=str)
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0729/21cat_relative_pose_step_by_step_pano_connect_edge1_v2', type=str)
 # parser.add_argument('--data-dir_aug', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cmv2', type=str)
-parser.add_argument('--data-dir_aug', default=[
-                                                '/disk4/hwing/Dataset/cm_graph/mp3d/0803/21cat_relative_pose_step_by_step_pano_connect_v2',
-                                              '/disk4/hwing/Dataset/cm_graph/mp3d/0729/21cat_relative_pose_step_by_step_pano_connect_edge1_v2',
+# parser.add_argument('--data-dir_aug', default=[
+#                                                 '/disk4/hwing/Dataset/cm_graph/mp3d/0803/21cat_relative_pose_step_by_step_pano_connect_v2',
+#                                               '/disk4/hwing/Dataset/cm_graph/mp3d/0729/21cat_relative_pose_step_by_step_pano_connect_edge1_v2',
                                                # '/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cm',
                                                # '/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm',
                                                # '/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2',
-                                               ])
+                                               # ])
 # parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1v1_augv2_panov3_4_layer{}_hidden{}_goalscore_w_adjmtx_valueloss{}_adjloss{}_hoploss_visited{}_signloss{}_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1_datav2_panov3_2_layer{}_hidden{}_goalscore_wnorm_adjmtx_valueloss{}_adjloss{}_hoploss_visited{}_signloss{}_{}_maxdist{}_lr{}', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_edge1v1', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
@@ -66,7 +66,7 @@ args = parser.parse_args()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-from model_value_graph_0607 import TopoGCN_v3_4_pano_goalscore as Model
+from model_value_graph_0607 import TopoGCN_value_diff_pano_goalscore as Model
 
 import torch
 import torch.nn as nn
@@ -357,7 +357,6 @@ def main():
             if args.sign_loss_cf == 0:
                 sign_loss = torch.tensor(0.0).cuda()
             else:
-                # sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]], node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
                 sign_loss = sign_penalty_loss(pred_dist[min_max_indices[0]] - pred_dist[min_max_indices[1]], node_goal_dists[min_max_indices[0]] - node_goal_dists[min_max_indices[1]])
 
             loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss + args.sign_loss_cf * sign_loss + args.adj_sim_loss_cf * adj_sim_loss
@@ -474,8 +473,6 @@ def main():
                 if torch.isnan(adj_sim_loss):
                     adj_sim_loss = torch.tensor(0.0).cuda()
 
-                # sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]],
-                #                               node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
                 sign_loss = sign_penalty_loss(pred_dist[min_max_indices[0]] - pred_dist[min_max_indices[1]],
                                               node_goal_dists[min_max_indices[0]] - node_goal_dists[min_max_indices[1]])
 

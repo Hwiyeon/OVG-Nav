@@ -931,6 +931,116 @@ class TopoGCN_v3_2_pano_goalscore(nn.Module):
 
         return pred_dist
 
+
+class TopoGCN_v3_3_pano_goalscore(nn.Module):
+    def __init__(self, args, hidden_size=512):
+        super(TopoGCN_v3_3_pano_goalscore, self).__init__()
+        self.args = args
+        self.info_dim = 1 + 3 + args.vis_feat_dim  # visited, position, goal text feat dim
+        if args.use_cm_score:
+            self.info_dim += 12 * 10  # cm_score
+        self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
+
+        self.gcn_layer_num = args.gcn_layers
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.5)
+        self.sigmoid = nn.Sigmoid()
+
+        self.feat_enc = nn.Sequential(
+            nn.Linear(self.feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+        )
+
+        self.value_layer = nn.Sequential(
+            nn.Linear(hidden_size + self.feat_dim, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, 1),
+            # nn.Sigmoid()
+        )
+
+        self.graph_convs = nn.ModuleList()
+        for i in range(self.gcn_layer_num):
+            self.graph_convs.append(GraphConv(hidden_size + self.info_dim, hidden_size))
+
+
+
+    def forward(self, feat, goal_feat, info_feat, adj):
+        feat_x = torch.cat([feat, goal_feat, info_feat], dim=-1)
+        feat_x = self.feat_enc(feat_x)
+
+        for i in range(self.gcn_layer_num):
+            feat_x = torch.cat([feat_x, goal_feat, info_feat], dim=-1)
+            feat_x = self.dropout(self.relu(self.graph_convs[i](feat_x, adj)))
+
+        feat_x = torch.cat([feat_x, goal_feat, info_feat, feat], dim=-1)
+        pred_dist = self.sigmoid(self.value_layer(feat_x))
+
+        return pred_dist
+
+class TopoGCN_v3_4_pano_goalscore(nn.Module):
+    def __init__(self, args, hidden_size=512):
+        super(TopoGCN_v3_4_pano_goalscore, self).__init__()
+        self.args = args
+        self.info_dim = 1 + 3 + args.vis_feat_dim  # visited, position, goal text feat dim
+        if args.use_cm_score:
+            self.info_dim += 12 * 10  # cm_score
+        self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
+
+        self.gcn_layer_num = args.gcn_layers
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.5)
+        self.sigmoid = nn.Sigmoid()
+
+        self.feat_enc = nn.Sequential(
+            nn.Linear(self.feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+        )
+
+        self.value_layer = nn.Sequential(
+            nn.Linear(hidden_size + self.info_dim, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, 1),
+            # nn.Sigmoid()
+        )
+
+        self.graph_convs = nn.ModuleList()
+        for i in range(self.gcn_layer_num):
+            self.graph_convs.append(GraphConv(hidden_size + self.info_dim, hidden_size))
+
+
+
+    def forward(self, feat, goal_feat, info_feat, adj):
+        feat_x = torch.cat([feat, goal_feat, info_feat], dim=-1)
+        feat_x = self.feat_enc(feat_x)
+
+        for i in range(self.gcn_layer_num):
+            feat_x = torch.cat([feat_x, goal_feat, info_feat], dim=-1)
+            feat_x = self.dropout(self.relu(self.graph_convs[i](feat_x, adj)))
+
+        feat_x = torch.cat([feat_x, goal_feat, info_feat], dim=-1)
+        pred_dist = self.sigmoid(self.value_layer(feat_x))
+
+        return pred_dist
+
+
 class TopoGCN_v4_pano_goalscore(nn.Module):
     def __init__(self, args, hidden_size=512):
         super(TopoGCN_v4_pano_goalscore, self).__init__()
@@ -1039,6 +1149,112 @@ class TopoGCN_v4_1_pano_goalscore(nn.Module):
 class TopoGCN_v4_2_pano_goalscore(nn.Module):
     def __init__(self, args, hidden_size=512):
         super(TopoGCN_v4_2_pano_goalscore, self).__init__()
+        self.args = args
+        self.info_dim = 1 + 3 + args.vis_feat_dim  # visited, position, goal text feat dim
+        if args.use_cm_score:
+            self.info_dim += 12 * 10  # cm_score
+        self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
+
+        self.gcn_layer_num = args.gcn_layers
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.8)
+        self.sigmoid = nn.Sigmoid()
+
+        self.feat_enc = nn.Sequential(
+            nn.Linear(self.feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+        self.value_layer = nn.Sequential(
+            nn.Linear(hidden_size + args.vis_feat_dim, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size* 2, 1),
+            # nn.Sigmoid()
+        )
+
+        self.graph_convs = nn.ModuleList()
+        for i in range(self.gcn_layer_num):
+            self.graph_convs.append(GraphConv(hidden_size, hidden_size))
+
+
+
+    def forward(self, feat, goal_feat, info_feat, adj):
+        feat_x = torch.cat([feat, goal_feat, info_feat], dim=-1)
+        feat_x = self.feat_enc(feat_x)
+
+        for i in range(self.gcn_layer_num):
+            feat_x = self.dropout(self.relu(self.graph_convs[i](feat_x, adj)))
+
+        feat_x = torch.cat([feat_x, goal_feat], dim=-1)
+        pred_dist = self.sigmoid(self.value_layer(feat_x))
+
+        return pred_dist
+
+
+class TopoGCN_v4_3_pano_goalscore(nn.Module):
+    def __init__(self, args, hidden_size=512):
+        super(TopoGCN_v4_3_pano_goalscore, self).__init__()
+        self.args = args
+        self.info_dim = 1 + 3 + args.vis_feat_dim  # visited, position, goal text feat dim
+        if args.use_cm_score:
+            self.info_dim += 12 * 10  # cm_score
+        self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
+
+        self.gcn_layer_num = args.gcn_layers
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.8)
+        self.sigmoid = nn.Sigmoid()
+
+        self.feat_enc = nn.Sequential(
+            nn.Linear(self.feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+        self.value_layer = nn.Sequential(
+            nn.Linear(hidden_size + self.feat_dim, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size* 2, 1),
+            # nn.Sigmoid()
+        )
+
+        self.graph_convs = nn.ModuleList()
+        for i in range(self.gcn_layer_num):
+            self.graph_convs.append(GraphConv(hidden_size, hidden_size))
+
+
+
+    def forward(self, feat, goal_feat, info_feat, adj):
+        feat_x = torch.cat([feat, goal_feat, info_feat], dim=-1)
+        feat_x = self.feat_enc(feat_x)
+
+        for i in range(self.gcn_layer_num):
+            feat_x = self.dropout(self.relu(self.graph_convs[i](feat_x, adj)))
+
+        feat_x = torch.cat([feat_x, feat, goal_feat, info_feat], dim=-1)
+        pred_dist = self.sigmoid(self.value_layer(feat_x))
+
+        return pred_dist
+
+
+class TopoGCN_value_diff_pano_goalscore(nn.Module):
+    def __init__(self, args, hidden_size=512):
+        super(TopoGCN_value_diff_pano_goalscore, self).__init__()
         self.args = args
         self.info_dim = 1 + 3 + args.vis_feat_dim  # visited, position, goal text feat dim
         if args.use_cm_score:
