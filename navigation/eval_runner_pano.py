@@ -996,7 +996,7 @@ class Runner:
             dirc_imgs.append(dirc_img)
         return np.array(dirc_imgs)
 
-    def get_cand_node_dirc0(self, pano_rgb, depth, pos, rot, vis_pos=None):
+    def get_cand_node_dirc(self, pano_rgb, depth, pos, rot, vis_pos=None):
         ## rot is rotation vector
         cur_heading_idx = int(np.round(-rot[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
         cand_nodes = []
@@ -1095,7 +1095,7 @@ class Runner:
 
         return valid_cand_nodes
 
-    def get_cand_node_dirc(self, pano_rgb, depth, pos, rot, vis_pos=None):
+    def get_cand_node_dirc_max(self, pano_rgb, depth, pos, rot, vis_pos=None):
         ## rot is rotation vector
         cand_nodes = []
         self.local_mapper.reset_map()
