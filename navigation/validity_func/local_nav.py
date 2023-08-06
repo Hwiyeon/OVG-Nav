@@ -213,6 +213,10 @@ class LocalAgent(object):
             import ipdb
 
             ipdb.set_trace()
+
+        for locs in self.gt_collision_locs:
+            traversible[locs[0], locs[1]] = 0
+
         planner = FMMPlanner(self.args, traversible, 360 // 10, 1)
 
         if self.reset_goal:
@@ -227,7 +231,8 @@ class LocalAgent(object):
 
         # if get_l2_distance(start[0], self.goal[0], start[1], self.goal[1]) < 3:
         # if planner.fmm_dist[start[0], start[1]] > np.max(planner.fmm_dist) * 0.9: ## not navigable
-        if planner.fmm_dist[start[0], start[1]] > self.max_edge_range / self.grid_m * 1.5:  ## not directly navigable
+        if planner.fmm_dist[start[0], start[1]] > self.max_edge_range / self.grid_m * 2 or \
+            planner.fmm_dist[start[0], start[1]] > np.max(planner.fmm_dist) * 0.9:  ## not directly navigable
             terminate = 1
         else:
             terminate = 0

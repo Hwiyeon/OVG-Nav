@@ -37,6 +37,7 @@ class Node(object):
         self.blocked_children_ids = []
 
         self.vis_pos = None
+        self.invalid_pos = False
 
 
 
@@ -193,9 +194,15 @@ class GraphMap(object):
         if len(self.poses) == 0:
             return None, 999
         poses = list(self.poses)
+        if len(self.adj_mtx) >1:
+            isolated_node_ids = np.where(np.sum(self.adj_mtx, axis=0) == 0)[0]
+            for id in isolated_node_ids:
+                poses.remove(self.node_by_id[str(id)].pos)
+
         if not except_node_id is None:
             for id in except_node_id:
-                poses.remove(self.node_by_id[id].pos)
+                if self.node_by_id[id].pos in poses:
+                    poses.remove(self.node_by_id[id].pos)
         poses = np.array(poses)
         pos_diff = np.array([np.linalg.norm(np.array([pos[0], pos[2]]) - np.array([p[0], p[2]])) for p in poses])
         pos_idx = np.argmin(pos_diff)
@@ -287,6 +294,8 @@ class GraphMap(object):
         node.dist_to_objs = dist_to_objs
 
     def add_edge(self, node1, node2):
+        if node1.nodeid == node2.nodeid:
+            return
         if node1 not in self.nodes or node2 not in self.nodes:
             print("error one or more of the nodes not in the graph")
             return
@@ -295,6 +304,10 @@ class GraphMap(object):
 
         if node1.nodeid in node2.blocked_children_ids or node2.nodeid in node1.blocked_children_ids:
             return
+
+        if node1.invalid_pos or node2.invalid_pos:
+            return
+
         distance = np.linalg.norm(np.asarray(node1.pos) - np.asarray(node2.pos))
         # if distance > self.max_edge_length:
         #     return
@@ -342,6 +355,11 @@ class GraphMap(object):
         node1.blocked_children_ids.append(node2.nodeid)
         node2.blocked_children_ids.append(node1.nodeid)
 
+    def delete_invalid_node(self, node):
+        children = [child['node'] for child in node.children]
+        for child in children:
+            self.delete_edge(node, child)
+        node.invalid_pos = True
 
     def merge_nodes(self, node1, node2):
         """Merge two nodes in the graph"""

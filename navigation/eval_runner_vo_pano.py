@@ -60,7 +60,7 @@ from modules.detector.rednet_semantic_prediction import SemanticPredRedNet
 from modules.free_space_model.inference import FreeSpaceModel
 from modules.comet_relation.inference import CommonSenseModel
 from modules.visual_odometry.keypoint_matching import KeypointMatching
-from goal_dist_pred.model_value_graph_0607 import TopoGCN_v3_2_pano_goalscore as ValueModel
+from goal_dist_pred.model_value_graph_0607 import TopoGCN_v4_2_pano_goalscore as ValueModel
 
 from navigation.local_navigation import LocalNavigation
 
@@ -924,28 +924,52 @@ class Runner:
         for i, angle in enumerate(cand_angle):
             rot_vec = rot + np.radians(-angle) * rot_axis
             unit_vec = -np.array([np.sin(rot_vec[1]), 0, np.cos(rot_vec[1])])
-            cand_pos = pos + unit_vec * self.edge_range
+            edge_cand_pos = pos + unit_vec * self.edge_range
             cand_rot = rot_vec
             cur_heading_idx = int(np.round(-rot_vec[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
 
-            ## map coordinate for checking free space
-            cand_pose_for_map = (cand_pos[0], cand_pos[2], rot_vec[1])
-            cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, pose_origin_for_map)
-            cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
-            if self.local_mapper.is_traversable(curr_local_map, pose_on_map, cand_pose_on_grid_map):
-                cand_node_info = {'position': cand_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx,
-                                  'pose_on_map': cand_pose_on_grid_map, 'cand_edge': [],}
+            short_cand_pos = pos + unit_vec * self.graph_map.min_node_dist
+            cand_poses = [edge_cand_pos, short_cand_pos]
 
-                if self.vis_floorplan:
+            for cp_idx, cand_pos in enumerate(cand_poses):
+                ## map coordinate for checking free space
+                cand_pose_for_map = (cand_pos[0], cand_pos[2], rot_vec[1])
+                cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, pose_origin_for_map)
+                cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
+                if self.local_mapper.is_traversable(curr_local_map, pose_on_map, cand_pose_on_grid_map):
+                    cand_node_info = {'position': cand_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx,
+                                      'pose_on_map': cand_pose_on_grid_map, 'cand_edge': []}
+
+                    # if self.vis_floorplan:
                     vis_rot_vec = rot_vec + self.abs_init_rotation
                     vis_unit_vec = -np.array([np.sin(vis_rot_vec[1]), 0, np.cos(vis_rot_vec[1])])
-                    vis_cand_pos = vis_pos + vis_unit_vec * self.edge_range
+                    if cp_idx == 0:
+                        vis_cand_pos = vis_pos + vis_unit_vec * self.edge_range
+                    else:
+                        vis_cand_pos = vis_pos + vis_unit_vec * self.graph_map.min_node_dist
                     cand_node_info['vis_position'] = vis_cand_pos
 
-                cand_node_info['next_node'] = None
+                    # for degbugging vis
+                    # vis_map = np.copy(curr_local_map)
+                    # vis_map[pose_on_map[0], pose_on_map[1]] = 2
+                    # vis_map[cand_pose_on_grid_map[0], cand_pose_on_grid_map[1]] = 2
+                    # plt.imsave('test_map.png',vis_map, origin='lower')
 
-                cand_nodes.append(cand_node_info)
-                free_cand_nodes[angle_bias + i] = 1
+                    # ## --- one step further node --- ##
+                    # next_pos = pos + unit_vec * self.edge_range * 2
+                    # next_pose_for_map = (next_pos[0], next_pos[2], rot_vec[1])
+                    # next_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(next_pose_for_map,
+                    #                                                                            pose_origin_for_map)
+                    # next_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(next_pose_on_grid_map_cm)
+                    # if self.local_mapper.is_traversable(curr_local_map, pose_on_map, next_pose_on_grid_map):
+                    #     cand_node_info['next_node'] = {'position': next_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx}
+                    # else:
+                    cand_node_info['next_node'] = None
+
+                    cand_nodes.append(cand_node_info)
+                    free_cand_nodes[angle_bias + i] = 1
+
+                    break
 
         # cand_nodes.append({'position': cand_pos, 'rotation': cand_rot})
         #
@@ -1189,7 +1213,7 @@ class Runner:
         return object_value
 
 
-    def get_next_subgoal_using_graph(self, cur_node, include_visited=False):
+    def get_next_subgoal_using_graph(self, cur_node, include_visited=False, except_node_id=None):
         max_score = 0
         min_dist = 9999
         cand_node = None
@@ -1205,6 +1229,10 @@ class Runner:
         node_list = self.graph_map.candidate_node_ids
         if include_visited:
             node_list = node_list + self.graph_map.visited_node_ids
+        if except_node_id is not None:
+            for id in except_node_id:
+                node_list.remove(id)
+
 
         for i, id in enumerate(node_list):
             node = self.graph_map.get_node_by_id(id)
@@ -1702,13 +1730,14 @@ class Runner:
 
 
         arrive_node = False
+        find_frontier_visited_node_id = []
 
         while True:
             if self.end_episode:
                 return
 
-            if len(self.graph_map.candidate_node_ids) == 0:
-                self.do_panoramic_action(self.cur_node)
+            # if len(self.graph_map.candidate_node_ids) == 0:
+            #     self.do_panoramic_action(self.cur_node)
 
             if invalid_edge:
                 # return to the previous node
@@ -1720,10 +1749,14 @@ class Runner:
             else:
                 subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node)
                 if object_value < 0:
-                    subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node, include_visited=True)
+                    find_frontier_visited_node_id.append(self.cur_node.nodeid)
+                    subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node, include_visited=True,
+                                                                                   except_node_id=find_frontier_visited_node_id)
+                else:
+                    find_frontier_visited_node_id = []
 
-                if subgoal_node == None:
-                    return
+                # if subgoal_node == None:
+                #     return
 
                 subgoal_id = subgoal_node.nodeid
 

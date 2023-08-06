@@ -501,7 +501,7 @@ class TopdownView:
             self.top_down_map = stdv[:,:,0]
         except:
             self.top_down_map = stdv
-        color_stdv = cv2.imread(f"{self.data_dir}/{self.dataset}_floorplans/rgb_revised/{scan_name}_level_{self.floor}.png")
+        color_stdv = cv2.imread(f"{self.data_dir}/{self.dataset}_floorplans/rgb/{scan_name}_level_{self.floor}.png")
         color_stdv[color_stdv==0] = 255
         self.rgb_top_down_map = color_stdv
         return self.top_down_map

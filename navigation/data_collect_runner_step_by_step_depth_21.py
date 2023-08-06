@@ -46,7 +46,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.patches as patches
 import time
 import json
-from utils.visualizations.maps import get_topdown_map_from_sim, to_grid, TopdownView
+from utils.visualizations.maps_collect import get_topdown_map_from_sim, to_grid, TopdownView
 from utils.graph_utils.graph_pano_cs import GraphMap
 from utils.graph_utils.cand_node_utils import get_range_cand_nodes
 from utils.obj_category_info import assign_room_category, obj_names, gibson_goal_obj_names, mp3d_goal_obj_names, room_names, mp3d_room_names
@@ -957,24 +957,31 @@ class Runner:
         for i, angle in enumerate(cand_angle):
             rot_vec = rot + np.radians(-angle) * rot_axis
             unit_vec = -np.array([np.sin(rot_vec[1]), 0, np.cos(rot_vec[1])])
-            cand_pos = pos + unit_vec * self.edge_range
+            edge_cand_pos = pos + unit_vec * self.edge_range
             cand_rot = rot_vec
             cur_heading_idx = (int(np.round(-rot_vec[1] * 180 / np.pi / self.cand_rot_angle))) % self.rot_num
 
-            ## map coordinate for checking free space
-            cand_pose_for_map = (cand_pos[0], cand_pos[2], rot_vec[1])
-            cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, pose_origin_for_map)
-            cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
-            if self.local_mapper.is_traversable(curr_local_map, pose_on_map, cand_pose_on_grid_map):
-                cand_node_info = {'position': cand_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx,
-                                  'pose_on_map': cand_pose_on_grid_map, 'cand_edge': [], 'max_depth': max_depth_angle[i]}
+            short_cand_pos = pos + unit_vec * self.graph_map.min_node_dist
+            cand_poses = [edge_cand_pos, short_cand_pos]
 
+            for cp_idx, cand_pos in enumerate(cand_poses):
+                ## map coordinate for checking free space
+                cand_pose_for_map = (cand_pos[0], cand_pos[2], rot_vec[1])
+                cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map,
+                                                                                           pose_origin_for_map)
+                cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
+                if self.local_mapper.is_traversable(curr_local_map, pose_on_map, cand_pose_on_grid_map):
+                    cand_node_info = {'position': cand_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx,
+                                      'pose_on_map': cand_pose_on_grid_map, 'cand_edge': []}
 
-                # if self.vis_floorplan:
-                vis_rot_vec = rot_vec + self.abs_init_rotation
-                vis_unit_vec = -np.array([np.sin(vis_rot_vec[1]), 0, np.cos(vis_rot_vec[1])])
-                vis_cand_pos = vis_pos + vis_unit_vec * self.edge_range
-                cand_node_info['vis_position'] = vis_cand_pos
+                    # if self.vis_floorplan:
+                    vis_rot_vec = rot_vec + self.abs_init_rotation
+                    vis_unit_vec = -np.array([np.sin(vis_rot_vec[1]), 0, np.cos(vis_rot_vec[1])])
+                    if cp_idx == 0:
+                        vis_cand_pos = vis_pos + vis_unit_vec * self.edge_range
+                    else:
+                        vis_cand_pos = vis_pos + vis_unit_vec * self.graph_map.min_node_dist
+                    cand_node_info['vis_position'] = vis_cand_pos
 
                 # for degbugging vis
                 # vis_map = np.copy(curr_local_map)
@@ -1584,7 +1591,7 @@ class Runner:
                                                      curr_rotation,
                                                      np.array(curr_state.position) - np.array(self.abs_init_position))
                 cur_node_id, min_dist = self.graph_map.get_nearest_node(curr_position)
-                update_garph = self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes) #, min_node_dist=self.edge_range)  ## more restriction to running add node
+                update_garph = self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes, min_node_dist=self.edge_range)  ## more restriction to running add node
                 if min_dist < self.follower_goal_radius:
                     arrive_node = True
                     prev_node = self.cur_node
