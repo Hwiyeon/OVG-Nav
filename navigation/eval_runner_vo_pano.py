@@ -1231,7 +1231,8 @@ class Runner:
             node_list = node_list + self.graph_map.visited_node_ids
         if except_node_id is not None:
             for id in except_node_id:
-                node_list.remove(id)
+                if id in node_list:
+                    node_list.remove(id)
 
 
         for i, id in enumerate(node_list):
@@ -1730,6 +1731,7 @@ class Runner:
 
 
         arrive_node = False
+        find_frontier = False
         find_frontier_visited_node_id = []
 
         while True:
@@ -1747,13 +1749,22 @@ class Runner:
                 temp_goal_node = self.graph_map.get_node_by_id(cur_node_id)
                 temp_goal_position = temp_goal_node.pos
             else:
-                subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node)
-                if object_value < 0:
+                if len(self.graph_map.candidate_node_ids) > 0:
+                    subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node)
+                    if object_value < 0:
+                        find_frontier_visited_node_id.append(self.cur_node.nodeid)
+                        find_frontier = True
+                        subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node,
+                                                                                       include_visited=True,
+                                                                                       except_node_id=find_frontier_visited_node_id)
+                    else:
+                        find_frontier = False
+                        find_frontier_visited_node_id = []
+                else:
                     find_frontier_visited_node_id.append(self.cur_node.nodeid)
+                    find_frontier = True
                     subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node, include_visited=True,
                                                                                    except_node_id=find_frontier_visited_node_id)
-                else:
-                    find_frontier_visited_node_id = []
 
                 # if subgoal_node == None:
                 #     return
@@ -1913,7 +1924,7 @@ class Runner:
                                                      curr_rotation,
                                                      np.array(curr_state.position) - np.array(self.abs_init_position))
                 cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
-                self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes, min_node_dist=self.edge_range)
+                self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes)#, min_node_dist=self.edge_range)
 
 
                 self.local_agent.gt_new_sim_origin = get_sim_location(curr_position,

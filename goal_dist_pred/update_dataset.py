@@ -32,7 +32,7 @@ parser.add_argument('--seed', type=int, default=1, help="random seed (default: 1
 parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0803/21cat_relative_pose_step_by_step_pano_connect', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0806/21cat_relative_pose_step_by_step_pano_connect_edge1_v1.2', type=str)
 parser.add_argument('--log_dir', default='logs/cm_0607/0607_{}_lr{}_test', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")

@@ -12,7 +12,7 @@ import argparse
 parser = argparse.ArgumentParser()
 
 ## eval configs ##
-parser.add_argument("--gpu_list", type=str, default="5")
+parser.add_argument("--gpu_list", type=str, default="9")
 parser.add_argument("--model_gpu", type=str, default="0")
 parser.add_argument("--sim_gpu", type=str, default="0")
 # parser.add_argument("--data", type=str, default="gibosn")
@@ -23,7 +23,7 @@ parser.add_argument("--run_type", type=str, default="val")
 parser.add_argument("--data_split", type=int, default=10)
 parser.add_argument("--data_split_max", type=int, default=11)
 # parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/0721_21/actrot30_1obs_pano_cometscore_adjv2100_wadj_connected_test")
-parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/test/test3")
+parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/test/test3_1")
 # parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/halfnode_03-03_mp3d21_edge1_datav2_aug2_panov4_2_layer5_hidden512_goalscore_w_adjmtx_valueloss1.0_adjloss100.0_hoploss_visited100.0_signloss0.001_use_cm_maxdist30.0_lr0.0001")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")

@@ -596,6 +596,7 @@ class Batch_traj_DataLoader_pano_goalscore():
         # adj_mtx = torch.Tensor(adj_mtx) + torch.eye(graph_size)
 
         adj_mtx = torch.Tensor(adj_mtx)
+        # adj_mtx = adj_mtx / torch.sum(adj_mtx, dim=0).unsqueeze(1)
 
         return {
             'node_features': node_features,

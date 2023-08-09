@@ -983,25 +983,27 @@ class Runner:
                         vis_cand_pos = vis_pos + vis_unit_vec * self.graph_map.min_node_dist
                     cand_node_info['vis_position'] = vis_cand_pos
 
-                # for degbugging vis
-                # vis_map = np.copy(curr_local_map)
-                # vis_map[pose_on_map[0], pose_on_map[1]] = 2
-                # vis_map[cand_pose_on_grid_map[0], cand_pose_on_grid_map[1]] = 2
-                # plt.imsave('test_map.png',vis_map, origin='lower')
+                    # for degbugging vis
+                    # vis_map = np.copy(curr_local_map)
+                    # vis_map[pose_on_map[0], pose_on_map[1]] = 2
+                    # vis_map[cand_pose_on_grid_map[0], cand_pose_on_grid_map[1]] = 2
+                    # plt.imsave('test_map.png',vis_map, origin='lower')
 
-                # ## --- one step further node --- ##
-                # next_pos = pos + unit_vec * self.edge_range * 2
-                # next_pose_for_map = (next_pos[0], next_pos[2], rot_vec[1])
-                # next_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(next_pose_for_map,
-                #                                                                            pose_origin_for_map)
-                # next_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(next_pose_on_grid_map_cm)
-                # if self.local_mapper.is_traversable(curr_local_map, pose_on_map, next_pose_on_grid_map):
-                #     cand_node_info['next_node'] = {'position': next_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx}
-                # else:
-                cand_node_info['next_node'] = None
+                    # ## --- one step further node --- ##
+                    # next_pos = pos + unit_vec * self.edge_range * 2
+                    # next_pose_for_map = (next_pos[0], next_pos[2], rot_vec[1])
+                    # next_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(next_pose_for_map,
+                    #                                                                            pose_origin_for_map)
+                    # next_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(next_pose_on_grid_map_cm)
+                    # if self.local_mapper.is_traversable(curr_local_map, pose_on_map, next_pose_on_grid_map):
+                    #     cand_node_info['next_node'] = {'position': next_pos, 'rotation': cand_rot, 'heading_idx': cur_heading_idx}
+                    # else:
+                    cand_node_info['next_node'] = None
 
-                cand_nodes.append(cand_node_info)
-                free_cand_nodes[angle_bias + i] = 1
+                    cand_nodes.append(cand_node_info)
+                    free_cand_nodes[angle_bias + i] = 1
+
+                    break
 
         # cand_nodes.append({'position': cand_pos, 'rotation': cand_rot})
         #
@@ -1591,7 +1593,7 @@ class Runner:
                                                      curr_rotation,
                                                      np.array(curr_state.position) - np.array(self.abs_init_position))
                 cur_node_id, min_dist = self.graph_map.get_nearest_node(curr_position)
-                update_garph = self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes, min_node_dist=self.edge_range)  ## more restriction to running add node
+                update_garph = self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes)#, min_node_dist=self.edge_range)  ## more restriction to running add node
                 if min_dist < self.follower_goal_radius:
                     arrive_node = True
                     prev_node = self.cur_node
@@ -1797,7 +1799,7 @@ class Runner:
                 epi_length_num[length_idx] += 1
 
 
-            interval = 200
+            interval = 100
 
             while True:
                 epi_length_num_sample = np.zeros([3])

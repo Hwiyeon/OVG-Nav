@@ -207,6 +207,7 @@ class LocalAgent(object):
             int(y / self.map_resolution),
             int(x / self.map_resolution),
         )
+
         try:
             traversible[start[0] - 2 : start[0] + 3, start[1] - 2 : start[1] + 3] = 1
         except:
@@ -231,7 +232,7 @@ class LocalAgent(object):
 
         # if get_l2_distance(start[0], self.goal[0], start[1], self.goal[1]) < 3:
         # if planner.fmm_dist[start[0], start[1]] > np.max(planner.fmm_dist) * 0.9: ## not navigable
-        if planner.fmm_dist[start[0], start[1]] > self.max_edge_range / self.grid_m * 2 or \
+        if planner.fmm_dist[start[0], start[1]] > self.max_edge_range / self.grid_m * 1.5 or \
             planner.fmm_dist[start[0], start[1]] > np.max(planner.fmm_dist) * 0.9:  ## not directly navigable
             terminate = 1
         else:

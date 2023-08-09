@@ -1337,7 +1337,8 @@ class Runner:
             node_list = node_list + self.graph_map.visited_node_ids
         if except_node_id is not None:
             for id in except_node_id:
-                node_list.remove(id)
+                if id in node_list:
+                    node_list.remove(id)
 
         for i, id in enumerate(node_list):
             node = self.graph_map.get_node_by_id(id)
@@ -1817,12 +1818,13 @@ class Runner:
         invalid_edge_node = []
 
         arrive_node = False
+        find_frontier = False
         find_frontier_visited_node_id = []
 
         while True:
             if self.end_episode:
                 return
-            if len(self.graph_map.candidate_node_ids) == 0:
+            if len(self.graph_map.candidate_node_ids) == 0 or find_frontier:
                 self.do_panoramic_action(self.cur_node)
             if invalid_edge:
                 # return to the previous node
@@ -1830,12 +1832,20 @@ class Runner:
                 temp_goal_node = self.graph_map.get_node_by_id(cur_node_id)
                 temp_goal_position = temp_goal_node.pos
             else:
-                subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node)
-                if object_value < 0:
-                    find_frontier_visited_node_id.append(self.cur_node.nodeid)
-                    subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node, include_visited=True, except_node_id=find_frontier_visited_node_id)
+                if len(self.graph_map.candidate_node_ids) > 0:
+                    subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node)
+                    if object_value < 0:
+                        find_frontier_visited_node_id.append(self.cur_node.nodeid)
+                        find_frontier = True
+                        subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node, include_visited=True, except_node_id=find_frontier_visited_node_id)
+                    else:
+                        find_frontier = False
+                        find_frontier_visited_node_id = []
                 else:
-                    find_frontier_visited_node_id = []
+                    find_frontier_visited_node_id.append(self.cur_node.nodeid)
+                    find_frontier = True
+                    subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node, include_visited=True,
+                                                                                   except_node_id=find_frontier_visited_node_id)
                 # if subgoal_node == None:
                 #     return
 
@@ -2999,4 +3009,3 @@ class Runner:
 
 
         return success_results, obj_success_results
-
