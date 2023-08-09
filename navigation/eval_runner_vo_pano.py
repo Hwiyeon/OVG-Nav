@@ -258,13 +258,14 @@ class Runner:
 
     def make_total_frame(self, rgb, depth, graph, local_map, pano_rgb, info):
         rh, rw = np.shape(rgb)[:2]
-        rh, rw = int(rh/2), int(rw/2)
+        rh, rw = int(rh/4), int(rw/4)
         small_rgb = cv2.resize(rgb, (rw, rh))
         small_depth = cv2.resize(depth, (rw, rh))
         small_depth = ((np.clip(small_depth, 0.1, 10.) / 10.) * 255).astype(np.uint8)
         gh, gw = np.shape(graph)[:2]
         gh, gw = rh*2, int(rh*2 * gw / gh)
         ph, pw = np.shape(pano_rgb)[:2]
+        ph, pw = int(ph/2), int(pw/2)
 
         lh, lw = np.shape(local_map)[:2]
         local_map = cv2.flip(local_map, 1)
