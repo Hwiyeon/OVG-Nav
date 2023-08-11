@@ -258,15 +258,15 @@ class Runner:
 
     def make_total_frame(self, rgb, depth, graph, local_map, pano_rgb, info):
         rh, rw = np.shape(rgb)[:2]
-        rh, rw = int(rh/4), int(rw/4)
+        rh, rw = int(rh / 2), int(rw / 2)
         small_rgb = cv2.resize(rgb, (rw, rh))
         small_depth = cv2.resize(depth, (rw, rh))
         small_depth = ((np.clip(small_depth, 0.1, 10.) / 10.) * 255).astype(np.uint8)
         gh, gw = np.shape(graph)[:2]
-        gh, gw = rh*2, int(rh*2 * gw / gh)
+        gh, gw = int(rw * 2 * gh / gw), rw * 2
         ph, pw = np.shape(pano_rgb)[:2]
-        ph, pw = int(ph/2), int(pw/2)
-        small_pano_rgb = cv2.resize(pano_rgb[:,:,:3], (pw, ph))
+        ph, pw = int(rw / 2), rw * 2
+        small_pano_rgb = cv2.resize(pano_rgb.astype(np.uint8), (pw, ph))
 
         lh, lw = np.shape(local_map)[:2]
         local_map = cv2.flip(local_map, 1)
@@ -274,15 +274,15 @@ class Runner:
         # local_map = cv2.resize(local_map, (lw, lh))
 
         small_graph = cv2.resize(graph, (gw, gh))
-        max_h = max(rh*2, gh, lh)
-        max_w = max(rw + gw + lw, pw)
+        max_h = rh + ph + gh + lh
+        max_w = max(rw*2, gw, lw, pw)
 
-        frame = np.zeros([max_h+ph, max_w, 3])
+        frame = np.zeros([max_h, max_w, 3])
         frame[:rh, :rw, :] = small_rgb[:, :, :3]
-        frame[rh:rh*2, :rw, :] = np.tile(small_depth[:, :, np.newaxis], [1, 1, 3])
-        frame[:gh, rw:rw+gw, ] = small_graph
-        frame[:lh, rw+gw:rw+gw+lw, ] = local_map[:, :, :3]
-        frame[max_h:, :pw, ] = small_pano_rgb[:, :, :3]
+        frame[:rh, rw:rw*2, :] = np.tile(small_depth[:, :, np.newaxis], [1, 1, 3])
+        frame[rh:rh+ph, :pw, :] = small_pano_rgb[:, :, :3]
+        frame[rh+ph:rh+ph+gh, :gw, ] = small_graph
+        frame[rh+ph+gh:, :lw, :] = local_map[:, :, :3]
         frame = frame.astype(np.uint8)
 
 
@@ -895,7 +895,6 @@ class Runner:
         return np.array(dirc_imgs)
 
     def get_cand_node_dirc(self, pano_rgb, depth, pos, rot, vis_pos=None):
-
         ## rot is rotation vector
         cur_heading_idx = int(np.round(-rot[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
         cand_nodes = []
@@ -973,6 +972,7 @@ class Runner:
 
                     break
 
+
         # cand_nodes.append({'position': cand_pos, 'rotation': cand_rot})
         #
         pano_split_images = self.get_dirc_imgs_from_pano(pano_rgb)
@@ -985,8 +985,12 @@ class Runner:
             cand_image_feat = self.common_sense_model.clip.get_image_feat(cand_split_images)
             # cm_score, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat, cand_image_feat, feat=True)
             for i in range(len(cand_nodes)):
-                cand_nodes[i]['clip_feat'] = cand_image_feat[i]
+                # if not self.graph_map.check_node_exist(cand_nodes[i]['position']):
+                    # value = np.round(np.max(similarity, axis=1), 3)
+                    # cand_nodes[i]['clip_feat'] = cand_split_feat[i]
+                    # cand_nodes[i]['value'] = value[i]
 
+                cand_nodes[i]['clip_feat'] = cand_image_feat[i]
                 for j in range(i + 1, len(cand_nodes)):
                     if self.local_mapper.is_traversable(curr_local_map, cand_nodes[i]['pose_on_map'],
                                                         cand_nodes[j]['pose_on_map']):
@@ -1176,10 +1180,10 @@ class Runner:
         nodes = [self.graph_map.node_by_id[id] for id in self.graph_map.node_by_id.keys()]
         graph_size = len(nodes)
 
-        node_cm_scores = torch.zeros([graph_size, 12*10], dtype=torch.float)
+        node_cm_scores = torch.zeros([graph_size, 12 * 10], dtype=torch.float)
         node_features = torch.zeros([graph_size, 12 * self.args.vis_feat_dim], dtype=torch.float)
         node_goal_features = torch.zeros([graph_size, self.args.vis_feat_dim], dtype=torch.float)
-        node_info_features = torch.zeros([graph_size, 1+3+12*10], dtype=torch.float)
+        node_info_features = torch.zeros([graph_size, 1 + 3 + 12 * 10], dtype=torch.float)
 
         # for i in range(graph_size):
         #     node_cm_scores[i] = torch.Tensor([nodes[i].cm_score])
@@ -1190,8 +1194,9 @@ class Runner:
             node_goal_features[i] = self.goal_category_feat[self.goal_class_idx]
             node_cm_scores[i] = torch.reshape(nodes[i].goal_cm_scores, [-1])
             node_info_features[i] = torch.cat([nodes[i].visited,
-                                           torch.Tensor(nodes[i].pos),
-                                           node_cm_scores[i]], dim=0)
+                                               torch.Tensor(nodes[i].pos),
+                                               node_cm_scores[i]], dim=0)
+
 
         ## -- compute edge weight -- ##
         adj_mtx = torch.Tensor(self.graph_map.adj_mtx)
@@ -1200,17 +1205,17 @@ class Runner:
         adj_mtx = adj_mtx + torch.eye(graph_size)
 
         node_features, node_goal_features, node_info_features, adj_mtx = \
-                                    node_features.to(f'cuda:{self.args.model_gpu}'), \
-                                    node_goal_features.to(f'cuda:{self.args.model_gpu}'), \
-                                    node_info_features.to(f'cuda:{self.args.model_gpu}'), \
-                                    adj_mtx.to(f'cuda:{self.args.model_gpu}')
+            node_features.to(f'cuda:{self.args.model_gpu}'), \
+            node_goal_features.to(f'cuda:{self.args.model_gpu}'), \
+            node_info_features.to(f'cuda:{self.args.model_gpu}'), \
+            adj_mtx.to(f'cuda:{self.args.model_gpu}')
 
-        torch.set_num_threads(1)
         object_value = self.value_model(node_features, node_goal_features, node_info_features, adj_mtx)
         object_value = object_value.cpu().detach().numpy()
 
         for i, node in enumerate(nodes):
             node.pred_value = object_value[i]
+
         del adj_mtx
         return object_value
 
@@ -1235,7 +1240,6 @@ class Runner:
             for id in except_node_id:
                 if id in node_list:
                     node_list.remove(id)
-
 
         for i, id in enumerate(node_list):
             node = self.graph_map.get_node_by_id(id)
@@ -1272,7 +1276,6 @@ class Runner:
             # combined_score = 0.5 * softmax_cm_scores + 0.5 * dist_scores
 
             obj_scores = np.array(obj_scores)
-            # combined_score = obj_scores + 0.05 * dist_scores
             combined_score = obj_scores + dist_scores
             # combined_score = obj_scores
             node_idx = np.argmax(combined_score)
@@ -1740,8 +1743,8 @@ class Runner:
             if self.end_episode:
                 return
 
-            # if len(self.graph_map.candidate_node_ids) == 0:
-            #     self.do_panoramic_action(self.cur_node)
+            if len(self.graph_map.candidate_node_ids) == 0 or find_frontier:
+                self.do_panoramic_action(self.cur_node)
 
             if invalid_edge:
                 # return to the previous node
@@ -1788,8 +1791,6 @@ class Runner:
 
 
             obs = self._sim.get_sensor_observations()
-
-
             if len(self.goal_obs_consistency['count']) > 0:
                 if np.max(self.goal_obs_consistency['count']) >= self.goal_obs_consistency_th:
                     self.last_mile_navigation(obs)
@@ -1974,8 +1975,11 @@ class Runner:
                 invalid_edge = False
                 invalid_edge_node = []
             if invalid_edge:
-                print('invalid edge')
-                self.graph_map.delete_edge(self.cur_node, temp_goal_node)
+                # print('invalid edge')
+                # self.graph_map.delete_edge(self.cur_node, temp_goal_node)
+
+                print('invalid node')
+                self.graph_map.delete_invalid_node(temp_goal_node)
                 invalid_edge_node.append(temp_goal_node.nodeid)
                 continue
 
@@ -2512,12 +2516,12 @@ class Runner:
             self.cur_heading = np.zeros([3])
 
             ## -- floor plan -- ##
-            if self.vis_floorplan:
-                # self.curr_level = int(self.check_position2level(start_state.position[1]))
-                self.curr_level = int(self._sim.semantic_scene.objects[traj['info']['closest_goal_object_id']].region.level.id)
-                # self.base_map = self.map[self.curr_level].copy()
-                self.base_map = self.goal_map[self.curr_level][traj['object_category']].copy()
-                self.cur_graph_map = np.zeros_like(self.map[self.curr_level])
+            # if self.vis_floorplan:
+            # self.curr_level = int(self.check_position2level(start_state.position[1]))
+            self.curr_level = int(self._sim.semantic_scene.objects[traj['info']['closest_goal_object_id']].region.level.id)
+            # self.base_map = self.map[self.curr_level].copy()
+            self.base_map = self.goal_map[self.curr_level][traj['object_category']].copy()
+            self.cur_graph_map = np.zeros_like(self.map[self.curr_level])
 
 
 
@@ -2594,8 +2598,8 @@ class Runner:
 
             # set initial node
             self.cur_node, _ = self.graph_map.add_single_node(self.cur_position)
-            if self.vis_floorplan:
-                self.cur_node.vis_pos = np.array(self.abs_position) - np.array(self.abs_init_position)
+            # if self.vis_floorplan:
+            self.cur_node.vis_pos = np.array(self.abs_position) - np.array(self.abs_init_position)
 
 
             # similarity, pano_clip_feat = self.common_sense_model.clip.get_text_image_sim(self.goal_info['category'], pano_images, out_img_feat=True)
