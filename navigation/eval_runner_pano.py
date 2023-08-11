@@ -14,6 +14,7 @@ import cv2
 import torch
 import torch.nn as nn
 torch.set_num_threads(1)
+torch.manual_seed(100)
 
 import numpy as np
 from PIL import Image
@@ -59,7 +60,7 @@ from modules.detector.rednet_semantic_prediction import SemanticPredRedNet
 from modules.free_space_model.inference import FreeSpaceModel
 from modules.comet_relation.inference import CommonSenseModel
 from modules.visual_odometry.keypoint_matching import KeypointMatching
-from goal_dist_pred.model_value_graph_0607 import TopoGCN_v4_2_pano_goalscore as ValueModel
+from goal_dist_pred.model_value_graph_0607 import TopoGCN_v7_2_1_pano_goalscore as ValueModel
 
 from navigation.local_navigation import LocalNavigation
 from utils.graph_utils.cand_node_utils import get_range_cand_nodes
@@ -259,14 +260,15 @@ class Runner:
 
     def make_total_frame(self, rgb, depth, graph, local_map, pano_rgb, info):
         rh, rw = np.shape(rgb)[:2]
-        rh, rw = int(rh/4), int(rw/4)
+        rh, rw = int(rh / 2), int(rw / 2)
         small_rgb = cv2.resize(rgb, (rw, rh))
         small_depth = cv2.resize(depth, (rw, rh))
         small_depth = ((np.clip(small_depth, 0.1, 10.) / 10.) * 255).astype(np.uint8)
         gh, gw = np.shape(graph)[:2]
-        gh, gw = rh*2, int(rh*2 * gw / gh)
+        gh, gw = int(rw * 2 * gh / gw), rw * 2
         ph, pw = np.shape(pano_rgb)[:2]
-        ph, pw = int(ph / 2), int(pw / 2)
+        ph, pw = int(rw / 2), rw * 2
+        small_pano_rgb = cv2.resize(pano_rgb.astype(np.uint8), (pw, ph))
 
         lh, lw = np.shape(local_map)[:2]
         local_map = cv2.flip(local_map, 1)
@@ -274,17 +276,16 @@ class Runner:
         # local_map = cv2.resize(local_map, (lw, lh))
 
         small_graph = cv2.resize(graph, (gw, gh))
-        max_h = max(rh*2, gh, lh)
-        max_w = max(rw+gw+lw, pw)
+        max_h = rh + ph + gh + lh
+        max_w = max(rw*2, gw, lw, pw)
 
-        frame = np.zeros([max_h+ph, max_w, 3])
+        frame = np.zeros([max_h, max_w, 3])
         frame[:rh, :rw, :] = small_rgb[:, :, :3]
-        frame[rh:rh*2, :rw, :] = np.tile(small_depth[:, :, np.newaxis], [1, 1, 3])
-        frame[:gh, rw:rw+gw, ] = small_graph
-        frame[:lh, rw+gw:rw+gw+lw, ] = local_map[:, :, :3]
-        frame[max_h:, :pw, ] = pano_rgb[:, :, :3]
+        frame[:rh, rw:rw*2, :] = np.tile(small_depth[:, :, np.newaxis], [1, 1, 3])
+        frame[rh:rh+ph, :pw, :] = small_pano_rgb[:, :, :3]
+        frame[rh+ph:rh+ph+gh, :gw, ] = small_graph
+        frame[rh+ph+gh:, :lw, :] = local_map[:, :, :3]
         frame = frame.astype(np.uint8)
-
 
         ## text
         text1 = "Target object goal: {}   Mode: {}".format(info['target_goal'], info['mode'])
@@ -300,8 +301,10 @@ class Runner:
         canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
         canvas[:frame.shape[0], :] = frame
         # canvas = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
-        frame2 = cv2.putText(canvas, text1, text_position1, cv2.FONT_HERSHEY_SIMPLEX, 0.4, font_color, 1, cv2.LINE_AA)
-        frame2 = cv2.putText(canvas, text2, text_position2, cv2.FONT_HERSHEY_SIMPLEX, 0.4, font_color, 1, cv2.LINE_AA)
+        frame2 = cv2.putText(canvas, text1, text_position1, cv2.FONT_HERSHEY_SIMPLEX, 0.4, font_color, 1,
+                             cv2.LINE_AA)
+        frame2 = cv2.putText(canvas, text2, text_position2, cv2.FONT_HERSHEY_SIMPLEX, 0.4, font_color, 1,
+                             cv2.LINE_AA)
 
         return frame2
         # figure, ax = plt.subplots(1, 1, facecolor="whitesmoke")
@@ -2071,11 +2074,11 @@ class Runner:
                 invalid_edge = False
                 invalid_edge_node = []
             if invalid_edge:
-                print('invalid edge')
-                self.graph_map.delete_edge(self.cur_node, temp_goal_node)
+                # print('invalid edge')
+                # self.graph_map.delete_edge(self.cur_node, temp_goal_node)
 
-                # print('invalid node')
-                # self.graph_map.delete_invalid_node(temp_goal_node)
+                print('invalid node')
+                self.graph_map.delete_invalid_node(temp_goal_node)
 
                 invalid_edge_node.append(temp_goal_node.nodeid)
                 continue

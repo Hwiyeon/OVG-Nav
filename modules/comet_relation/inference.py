@@ -1,5 +1,6 @@
 import torch
 torch.set_num_threads(1)
+torch.manual_seed(100)
 import numpy as np
 from PIL import Image
 import argparse
@@ -61,7 +62,8 @@ class Comet:
 
 class CLIP:
     def __init__(self, args):
-        self.device = f'cuda:{args.model_gpu}'
+        # self.device = f'cuda:{args.model_gpu}'
+        self.device = 'cpu'
         # self.model = CLIPModel.from_pretrained(args.CLIP_model).to(self.device)
         # self.processor = CLIPProcessor.from_pretrained(args.CLIP_model)
 
@@ -71,7 +73,7 @@ class CLIP:
         # self.batch_size = 1
         # self.decoder_start_token_id = None
 
-        self.model, self.preprocess = clip.load(args.CLIP_model, device=self.device)
+        self.model, self.preprocess = clip.load(args.CLIP_model, device=self.device, jit=True)
 
 
     def numpy_to_PIL_list(self, images):
@@ -113,6 +115,7 @@ class CLIP:
         images = self.numpy_to_PIL_list(images)
         images = torch.stack([self.preprocess(image) for image in images]).to(self.device)
         with torch.no_grad():
+            torch.set_num_threads(1)
             img_feat = self.model.encode_image(images)
             text_feat = self.model.encode_text(text)
             # logits_per_image, logits_per_text = self.model(images, text)
@@ -129,12 +132,14 @@ class CLIP:
         images = self.numpy_to_PIL_list(images)
         images = torch.stack([self.preprocess(image) for image in images]).to(self.device)
         with torch.no_grad():
+            torch.set_num_threads(1)
             image_features = self.model.encode_image(images)
         return image_features.type(torch.float32)
 
     def get_text_feat(self, texts):
         text = clip.tokenize(texts).to(self.device)
         with torch.no_grad():
+            torch.set_num_threads(1)
             text_features = self.model.encode_text(text)
         return text_features.type(torch.float32)
 

@@ -266,6 +266,7 @@ class Runner:
         gh, gw = rh*2, int(rh*2 * gw / gh)
         ph, pw = np.shape(pano_rgb)[:2]
         ph, pw = int(ph/2), int(pw/2)
+        small_pano_rgb = cv2.resize(pano_rgb[:,:,:3], (pw, ph))
 
         lh, lw = np.shape(local_map)[:2]
         local_map = cv2.flip(local_map, 1)
@@ -281,7 +282,7 @@ class Runner:
         frame[rh:rh*2, :rw, :] = np.tile(small_depth[:, :, np.newaxis], [1, 1, 3])
         frame[:gh, rw:rw+gw, ] = small_graph
         frame[:lh, rw+gw:rw+gw+lw, ] = local_map[:, :, :3]
-        frame[max_h:, :pw, ] = pano_rgb[:, :, :3]
+        frame[max_h:, :pw, ] = small_pano_rgb[:, :, :3]
         frame = frame.astype(np.uint8)
 
 

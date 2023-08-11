@@ -26,7 +26,7 @@ parser.add_argument('--batch-size', type=int, default=512, help="learning rate (
 parser.add_argument('--lr', type=float, default=0.001, help="learning rate (default: 1e-05)")
 parser.add_argument('--momentum', type=float, default=0.9)
 parser.add_argument('--weight_decay', type=float, default=1e-4)
-parser.add_argument('--max-epoch', type=int, default=9, help="maximum epoch for training (default: 60)")
+parser.add_argument('--max-epoch', type=int, default=3, help="maximum epoch for training (default: 60)")
 parser.add_argument('--stepsize', type=int, default=30, help="how many steps to decay learning rate (default: 30)")
 parser.add_argument('--gamma', type=float, default=0.1, help="learning rate decay (default: 0.1)")
 parser.add_argument('--beta', type=float, default=0.01, help="weight for summary length penalty term (default: 0.01)")
@@ -52,8 +52,8 @@ parser.add_argument('--data-dir_aug', default=[
 # parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1v1.12_panov7_2_layer{}_hidden{}_goalscore_w_adjmtx_valueloss{}_adjloss{}_adjsimlos{}_signloss{}_{}_maxdist{}_lr{}', type=str)
-parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_edge1v1.12_0808', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1v1.12_panov7_2_1_layer{}_hidden{}_epoch_3_goalscore_w_adjmtx_valueloss{}_adjloss{}_adjsimlos{}_signloss{}_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_edge1v1.12_0810', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
 parser.add_argument('--checkpoints', type=str, default=None)
@@ -66,7 +66,7 @@ args = parser.parse_args()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-from model_value_graph_0607 import TopoGCN_v7_2_pano_goalscore as Model
+from model_value_graph_0607 import TopoGCN_v7_2_1_pano_goalscore as Model
 
 import torch
 import torch.nn as nn
@@ -275,9 +275,17 @@ def main():
         else:
             return 0.001
 
+    def coeff_rule(epoch, coeff, multiplier=1):
+        if epoch < int(args.max_epoch /3):
+            return coeff
+        elif epoch < int(args.max_epoch * 2 / 3):
+            return coeff * multiplier
+        else:
+            return coeff * multiplier * multiplier
+
     # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
     # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.999 ** epoch)
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: (0.1**(1/(train_batch_num*3))) ** epoch)
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: (0.1**(1/(train_batch_num*int(args.max_epoch/3)))) ** epoch)
 
     mse = nn.MSELoss()
     bce = nn.BCEWithLogitsLoss()
@@ -306,6 +314,11 @@ def main():
         disp_adj_sim_loss = 0.0
         disp_sign_loss = 0.0
         disp_value_acc = 0.0
+
+        epoch_value_loss_coeff = coeff_rule(epoch, args.value_loss_cf, multiplier=1)
+        epoch_adj_loss_coeff = coeff_rule(epoch, args.adj_loss_cf, multiplier=1)
+        epoch_adj_sim_loss_coeff = coeff_rule(epoch, args.adj_sim_loss_cf, multiplier=1)
+        epoch_sign_loss_coeff = coeff_rule(epoch, args.sign_loss_cf, multiplier=1)
 
 
         disp_iter = 0
@@ -351,7 +364,10 @@ def main():
             else:
                 sign_loss = sign_penalty_loss(pred_dist[indices[0]] - pred_dist[indices[1]].detach(), node_goal_dists[indices[0]] - node_goal_dists[indices[1]])
 
-            loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss + args.sign_loss_cf * sign_loss + args.adj_sim_loss_cf * adj_sim_loss
+
+
+            loss = epoch_value_loss_coeff * value_loss + epoch_adj_loss_coeff * adj_loss + epoch_adj_sim_loss_coeff * adj_sim_loss + epoch_sign_loss_coeff * sign_loss
+            # loss = args.value_loss_cf * value_loss + args.adj_loss_cf * adj_loss + args.sign_loss_cf * sign_loss + args.adj_sim_loss_cf * adj_sim_loss
 
             loss.backward()
             optimizer.step()

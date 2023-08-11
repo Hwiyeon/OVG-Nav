@@ -169,7 +169,7 @@ class GraphMap(object):
             min_node_dist = self.min_node_dist
         pos = tuple([round(x, 4) for x in pos])
         # if pos in self.poses:
-        nearest_node_idx, nearest_node_dist = self.get_nearest_node(pos)
+        nearest_node_idx, nearest_node_dist = self.get_nearest_node(pos, for_localization=False)
         if nearest_node_dist < min_node_dist:
             node = self.node_by_id[nearest_node_idx]
             add_new_node = False
@@ -190,14 +190,15 @@ class GraphMap(object):
 
         return node, add_new_node
 
-    def get_nearest_node(self, pos, except_node_id=None):
+    def get_nearest_node(self, pos, except_node_id=None, for_localization=True):
         if len(self.poses) == 0:
             return None, 999
         poses = list(self.poses)
-        if len(self.adj_mtx) >1:
-            isolated_node_ids = np.where(np.sum(self.adj_mtx, axis=0) == 0)[0]
-            for id in isolated_node_ids:
-                poses.remove(self.node_by_id[str(id)].pos)
+        if for_localization:
+            if len(self.adj_mtx) >1:
+                isolated_node_ids = np.where(np.sum(self.adj_mtx, axis=0) == 0)[0]
+                for id in isolated_node_ids:
+                    poses.remove(self.node_by_id[str(id)].pos)
 
         if not except_node_id is None:
             for id in except_node_id:
