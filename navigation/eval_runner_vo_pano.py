@@ -13,6 +13,7 @@ from enum import Enum
 import cv2
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 torch.set_num_threads(1)
 
 import numpy as np
@@ -60,7 +61,7 @@ from modules.detector.rednet_semantic_prediction import SemanticPredRedNet
 from modules.free_space_model.inference import FreeSpaceModel
 from modules.comet_relation.inference import CommonSenseModel
 from modules.visual_odometry.keypoint_matching import KeypointMatching
-from goal_dist_pred.model_value_graph_0607 import TopoGCN_v4_2_pano_goalscore as ValueModel
+from goal_dist_pred.model_value_graph_0607 import TopoGCN_v8_pano_goalscore as ValueModel
 
 from navigation.local_navigation import LocalNavigation
 
@@ -203,6 +204,39 @@ class Runner:
         self.cm_type = args.cm_type  ### 'comet or mp3d'
 
         self.cand_node_frame = get_range_cand_nodes(int(args.sensing_range / self.edge_range), self.edge_range)
+
+        ## -- localization template -- ##
+
+        self.rot_grid = {'move_forward': [], 'turn_left': [], 'turn_right': []}
+        rot_angle = 5 * np.pi / 180.
+        self.localize_rot_num = 7
+        self.rot_grid_headings = {'move_forward': [], 'turn_left': [], 'turn_right': []}
+        for i in range(-3, 4):
+            angle_0 = rot_angle * i
+            self.rot_grid['move_forward'].append(torch.FloatTensor(
+                [[np.cos(angle_0), -np.sin(angle_0), 0],
+                 [np.sin(angle_0), np.cos(angle_0), 0]]))
+            self.rot_grid_headings['move_forward'].append(-angle_0)
+
+            angle_1 = rot_angle * i - self.act_rot * np.pi / 180
+            self.rot_grid['turn_left'].append(torch.FloatTensor(
+                [[np.cos(angle_1), -np.sin(angle_1), 0],
+                 [np.sin(angle_1), np.cos(angle_1), 0]]))
+            self.rot_grid_headings['turn_left'].append(-angle_1)
+
+            angle_2 = rot_angle * i + self.act_rot * np.pi / 180
+            self.rot_grid['turn_right'].append(torch.FloatTensor(
+                [[np.cos(angle_2), -np.sin(angle_2), 0],
+                 [np.sin(angle_2), np.cos(angle_2), 0]]))
+            self.rot_grid_headings['turn_right'].append(-angle_2)
+        local_map_size = self.local_mapper.gt_map.shape[0]
+        self.local_map_size = local_map_size
+        self.rot_grid['move_forward'] = torch.stack(self.rot_grid['move_forward'])
+        self.rot_grid['move_forward'] = F.affine_grid(self.rot_grid['move_forward'], torch.Size((self.localize_rot_num, 1, local_map_size, local_map_size)))
+        self.rot_grid['turn_left'] = torch.stack(self.rot_grid['turn_left'])
+        self.rot_grid['turn_left'] = F.affine_grid(self.rot_grid['turn_left'], torch.Size((self.localize_rot_num, 1, local_map_size, local_map_size)))
+        self.rot_grid['turn_right'] = torch.stack(self.rot_grid['turn_right'])
+        self.rot_grid['turn_right'] = F.affine_grid(self.rot_grid['turn_right'], torch.Size((self.localize_rot_num, 1, local_map_size, local_map_size)))
 
 
 
@@ -747,6 +781,31 @@ class Runner:
 
         return cur_room
 
+    def crop_and_pad(self, tensor, x, y):
+        height, width = tensor.shape
+        crop_size_x = height // 2
+        crop_size_y = width // 2
+
+        # Define the start and end points for cropping
+        x_start = max(x - crop_size_x, 0)
+        x_end = min(x + crop_size_x + (height % 2), height)
+        y_start = max(y - crop_size_y, 0)
+        y_end = min(y + crop_size_y + (width % 2), width)
+
+        # Determine padding values
+        pad_top = max(crop_size_x - x, 0)
+        pad_bottom = max(x + crop_size_x + (height % 2) - height, 0)
+        pad_left = max(crop_size_y - y, 0)
+        pad_right = max(y + crop_size_y + (width % 2) - width, 0)
+
+        # Crop the tensor
+        cropped = tensor[x_start:x_end, y_start:y_end]
+
+        # Pad with zeros to match the original shape
+        result = torch.nn.functional.pad(cropped, (pad_left, pad_right, pad_top, pad_bottom), 'constant', 0)
+
+        return result
+
     def check_position2level(self, pos):
         # if len(position) == 3:
         #     pos = position[1]
@@ -794,7 +853,7 @@ class Runner:
         return np.sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[2] - pos2[2]) ** 2)
 
 
-    def get_vo_relative_camera_pose(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, initial_guess=None):
+    def get_vo_relative_camera_pose0(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, initial_guess=None):
         if initial_guess is None:
             initial_guess = self.vo_model.get_extrinsic_guess_from_action(action)
         torch.set_num_threads(1)
@@ -812,6 +871,59 @@ class Runner:
 
         return est_pos_diff, est_rot_diff, keypoint_est_success
 
+    def get_vo_relative_camera_pose(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, prev_local_map, curr_local_map, initial_guess=None):
+        # if initial_guess is None:
+        #     initial_guess = self.vo_model.get_extrinsic_guess_from_action(action)
+
+
+        curr_map = torch.Tensor(curr_local_map).unsqueeze(0).unsqueeze(0)
+        if action == 'move_forward':
+            unit_vec = -np.array([np.sin(cur_rotation[1]), 0, np.cos(cur_rotation[1])])
+            cand_pos = self.cur_position + unit_vec * self.step_size
+            cand_pose_for_map = (cand_pos[0], cand_pos[2], cur_rotation[1])
+            cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, (
+                                        self.cur_position[0], self.cur_position[2], 0))
+            cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
+            prev_map = self.crop_and_pad(torch.Tensor(prev_local_map), cand_pose_on_grid_map[0], cand_pose_on_grid_map[1])
+            prev_map = prev_map.unsqueeze(0).unsqueeze(0)
+        else:
+            prev_map = torch.Tensor(prev_local_map).unsqueeze(0).unsqueeze(0)
+
+
+        rot_filter = F.grid_sample(curr_map.repeat(self.localize_rot_num, 1, 1, 1), self.rot_grid[action])
+        localize = F.conv2d(prev_map, rot_filter, padding=3)
+        cand_map_idx = np.unravel_index(np.argmax(localize), localize.shape)
+
+        if torch.max(localize) == 0:
+            initial_guess = self.vo_model.get_extrinsic_guess_from_action(action)
+        else:
+            rot_guess = np.array([0, self.rot_grid_headings[action][cand_map_idx[1]], 0]).astype(np.float32)
+
+            if action == 'move_forward':
+                cand_map_pos_idx = (cand_pose_on_grid_map[1] + cand_map_idx[3] - 4, cand_pose_on_grid_map[0] + cand_map_idx[2] - 4)
+            else:
+                cand_map_pos_idx = (int(self.local_map_size/2) + cand_map_idx[3] - 4, int(self.local_map_size/2) + cand_map_idx[2] - 4)
+            pos_guess = self.local_mapper.get_sim_pose_from_mapper_coords(cand_map_pos_idx, (0,0,0), rot_guess)
+
+            initial_guess = {
+                'tvec': pos_guess,
+                'rvec': rot_guess
+            }
+
+        torch.set_num_threads(1)
+        est_pos_diff, est_rot_diff, keypoint_est_success = self.vo_model.get_relative_camera_pose(
+                                                            prev_rgb, prev_depth, curr_rgb, initial_guess, rot_vec=True)
+
+        # ## -- transform to habitat coordinate -- ##
+        # est_pos_diff[2] = -est_pos_diff[2]
+        # est_pos_diff[1] = -est_pos_diff[1]
+
+        rot = R.from_rotvec(cur_rotation)
+        rot.as_matrix()
+        est_pos_diff = rot.apply(est_pos_diff)
+
+
+        return est_pos_diff, est_rot_diff, keypoint_est_success
 
 
     def dist_to_objs(self, pos):
@@ -1562,10 +1674,15 @@ class Runner:
         prev_obs = self._sim.get_sensor_observations()
         prev_rgb = prev_obs['color_sensor'][:,:,:3]
         prev_depth = prev_obs['depth_sensor']
+        # prev_local_map = self.local_agent.get_observed_colored_map(gt=True)
+        # prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
+        prev_local_map = self.local_agent.gt_local_map
 
         obs = self._sim.step(action)
 
         curr_rgb = obs['color_sensor'][:,:,:3]
+        curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
+        # curr_local_map = self.local_agent.get_observed_colored_map(gt=True)
 
         self.abs_position = self._sim.agents[0].get_state().position
         self.path_length += self.dist_euclidean_floor(abs_prev_position, self.abs_position)
@@ -1573,7 +1690,8 @@ class Runner:
 
         for _ in range(5):
             est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb,
-                                                                                      action, self.cur_rotation)
+                                                                                      action, self.cur_rotation, prev_local_map, curr_local_map)
+                                                                                      # prev_local_map, curr_local_map)
             if vo_success: break
         curr_position = self.cur_position + est_pos_diff
         curr_rotation = self.cur_rotation + est_rot_diff
@@ -1627,10 +1745,13 @@ class Runner:
             # vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
             # vis_local_map = np.zeros([241, 241, 3])
 
-            self.local_agent.reset_with_curr_pose(curr_position, curr_rotation)
-            delta_dist, delta_rot = get_relative_location(curr_position, curr_rotation, curr_position)
-            self.local_agent.update_gt_local_map(obs['depth_sensor'])
-            self.local_agent.set_goal(delta_dist, delta_rot)
+
+            # self.local_agent.reset_with_curr_pose(curr_position, curr_rotation)
+            # delta_dist, delta_rot = get_relative_location(curr_position, curr_rotation, curr_position)
+            # self.local_agent.update_gt_local_map(obs['depth_sensor'], agent_view=curr_agent_view)
+            self.local_agent.gt_new_sim_origin = get_sim_location(curr_position, quaternion.from_rotation_vector(curr_rotation))
+            self.local_agent.update_gt_local_map(obs['depth_sensor'], agent_view=curr_agent_view)
+            # self.local_agent.set_goal(delta_dist, delta_rot)
             vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
 
             self.vis_info['cur_position'] = curr_position
@@ -1670,6 +1791,12 @@ class Runner:
         return self.end_episode
 
     def do_panoramic_action(self, cur_node):
+        self.local_agent.reset_with_curr_pose(self.cur_position, self.cur_rotation)
+        obs = self._sim.get_sensor_observations()
+        delta_dist, delta_rot = get_relative_location(self.cur_position, self.cur_rotation, self.cur_position)
+        self.local_agent.update_gt_local_map(obs['depth_sensor'])
+        self.local_agent.set_goal(delta_dist, delta_rot)
+
         action = 'turn_left'
         for i in range(int(360/self.act_rot)):
             self.end_episode = self.do_explicit_action(cur_node, action)
@@ -1801,6 +1928,7 @@ class Runner:
             delta_dist, delta_rot = get_relative_location(curr_position, curr_rotation, temp_goal_position)
             self.local_agent.update_gt_local_map(obs['depth_sensor'])
             self.local_agent.set_goal(delta_dist, delta_rot)
+            curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
 
             if self.vis_floorplan:
                 self.abs_position = self._sim.agents[0].get_state().position
@@ -1811,7 +1939,7 @@ class Runner:
                                                                    curr_position=np.array(self.abs_position) - np.array(self.abs_init_position),
                                                                    curr_goal_node=subgoal_node,
                                                                    visited_positions=self.visited_positions)
-                vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
+                # vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
                                                                    # vis_goal_obj_score=self.goal_class_idx)
             local_action_cnt = 0
             terminate_local = False
@@ -1822,7 +1950,8 @@ class Runner:
                     break
                 action = self.local_agent.action_idx_map[action]
                 prev_position = self._sim.agents[0].get_state().position
-
+                prev_rotation = quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation)
+                prev_local_map = self.local_agent.gt_local_map
 
 
                 prev_obs = obs
@@ -1838,9 +1967,37 @@ class Runner:
                 if action == 'move_forward':
                     arrive_node = False
 
+                curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor']*100.)
+
+                # prev_map = torch.Tensor(prev_local_map).unsqueeze(0).unsqueeze(0)
+                # curr_map = torch.Tensor(curr_local_map).unsqueeze(0).unsqueeze(0)
+
+
+                # unit_vec = -np.array([np.sin(self.cur_rotation[1]), 0, np.cos(self.cur_rotation[1])])
+                # cand_pos = self.cur_position + unit_vec * self.step_size
+                # cand_pose_for_map = (cand_pos[0], cand_pos[2], self.cur_rotation[1])
+                # cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, (self.cur_position[0], self.cur_position[2], 0))
+                # cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
+                #
+                # prev_map = torch.Tensor(prev_local_map)
+                # prev_map = self.crop_and_pad(prev_map, 120, 100)
+                # plt.imsave('test_map.png', prev_local_map)
+                # plt.imsave('test_map0.png', prev_map)
+
+                # rot_filter = F.grid_sample(curr_map.repeat(self.localize_rot_num, 1, 1, 1), rot_grid)
+                # localize = F.conv2d(prev_map, rot_filter, padding=4)
+                # np.unravel_index(np.argmax(localize), localize.shape)
+                # self._sim.agents[0].get_state().position - prev_position, np.rad2deg(quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation) - prev_rotation)
+
+                # plt.imsave('test_map0.png', prev_local_map, origin='lower')
+                # plt.imsave('test_map1.png', curr_local_map, origin='lower')
+                # plt.imsave('test_map2.png', rot_filter[6, 0].numpy(), origin='lower')
+                
+
+
                 curr_rgb = obs['color_sensor'][:, :, :3]
                 for _ in range(5):
-                    est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb, action, self.cur_rotation)
+                    est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb, action, self.cur_rotation, prev_local_map, curr_local_map)
                     if vo_success: break
                 curr_position = self.cur_position + est_pos_diff
                 curr_rotation = self.cur_rotation + est_rot_diff
@@ -1860,7 +2017,7 @@ class Runner:
                 curr_state = self._sim.agents[0].get_state()
 
                 self.local_agent.gt_new_sim_origin = get_sim_location(curr_position, quaternion.from_rotation_vector(curr_rotation))
-                self.local_agent.update_gt_local_map(obs['depth_sensor'])
+                self.local_agent.update_gt_local_map(obs['depth_sensor'], agent_view=curr_agent_view)
 
                 if self.vis_floorplan:
                     self.vis_info['cur_position'] = curr_position
@@ -2120,6 +2277,7 @@ class Runner:
             # vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
 
         obs = self._sim.get_sensor_observations()
+        curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
 
         while True:
             if self.dist_euclidean_floor(curr_position, target_position) < self.step_size or \
@@ -2130,18 +2288,21 @@ class Runner:
             prev_obs = obs
             prev_rgb = obs['color_sensor'][:, :, :3]
             prev_depth = obs['depth_sensor']
+            prev_local_map = self.local_agent.gt_local_map
 
             action, terminate_local = self.local_agent.navigate_local(gt=True)
             action = self.local_agent.action_idx_map[action]
             prev_position = self._sim.agents[0].get_state().position
             obs = self._sim.step(action)
             self.path_length += self.dist_euclidean_floor(prev_position, self._sim.agents[0].get_state().position)
+            curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
 
             curr_rgb = obs['color_sensor'][:, :, :3]
             for _ in range(5):
                 est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth,
                                                                                           curr_rgb, action,
-                                                                                          self.cur_rotation)
+                                                                                          self.cur_rotation,
+                                                                                          prev_local_map, curr_local_map)
                 if vo_success: break
             curr_position = self.cur_position + est_pos_diff
             curr_rotation = self.cur_rotation + est_rot_diff
@@ -2178,7 +2339,7 @@ class Runner:
 
             self.local_agent.gt_new_sim_origin = get_sim_location(curr_position,
                                                                   quaternion.from_rotation_vector(curr_rotation))
-            self.local_agent.update_gt_local_map(obs['depth_sensor'])
+            self.local_agent.update_gt_local_map(obs['depth_sensor'], agent_view=curr_agent_view)
 
             if self.vis_floorplan:
                 self.abs_position = self._sim.agents[0].get_state().position
@@ -2402,49 +2563,54 @@ class Runner:
             self.update_cur_floor_map()
             self.vis_obj_viewpoint_on_floormap()
 
-            ## save floor map image
-            floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
-            if not os.path.exists(floor_map_dir):
-                os.makedirs(floor_map_dir)
-            for lv in range(len(self.map)):
-                cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}.png', cv2.cvtColor(self.map[lv], cv2.COLOR_BGR2RGB))
-                for obj_name in self.goal_obj_names:
-                    cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}_{obj_name}.png',
-                                cv2.cvtColor(self.goal_map[lv][obj_name], cv2.COLOR_BGR2RGB))
-            print("Save floor map done")
+        # ## save floor map image
+        # floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
+        # if not os.path.exists(floor_map_dir):
+        #     os.makedirs(floor_map_dir)
+        # for lv in range(len(self.map)):
+        #     cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}.png', cv2.cvtColor(self.map[lv], cv2.COLOR_BGR2RGB))
+        #     for obj_name in self.goal_obj_names:
+        #         cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}_{obj_name}.png',
+        #                     cv2.cvtColor(self.goal_map[lv][obj_name], cv2.COLOR_BGR2RGB))
+        # print("Save floor map done")
 
-            ## -- load results -- ##
-            if not os.path.exists(f'{self.args.save_dir}/{self.data_type}/results'):
-                os.makedirs(f'{self.args.save_dir}/{self.data_type}/results')
-            elif os.path.isfile(f'{self.args.save_dir}/{self.data_type}/results/{self.env_name}_result.json'):
-                with open(f'{self.args.save_dir}/{self.data_type}/results/{self.env_name}_result.json', 'rb') as file:
-                    results = json.load(file)
-                for cnt in range(results['total']['count']):
-                    total_success.append(results['total']['success'])
-                    total_spl.append(results['total']['spl'])
-                    total_dts.append(results['total']['dts'])
-                for cnt in range(results['easy']['count']):
-                    easy_success.append(results['easy']['success'])
-                    easy_spl.append(results['easy']['spl'])
-                    easy_dts.append(results['easy']['dts'])
-                for cnt in range(results['medium']['count']):
-                    medium_success.append(results['medium']['success'])
-                    medium_spl.append(results['medium']['spl'])
-                    medium_dts.append(results['medium']['dts'])
-                for cnt in range(results['hard']['count']):
-                    hard_success.append(results['hard']['success'])
-                    hard_spl.append(results['hard']['spl'])
-                    hard_dts.append(results['hard']['dts'])
-                for obj_name in self.goal_obj_names:
-                    for cnt in range(results[obj_name]['count']):
-                        obj_success_list[obj_name].append(results[obj_name]['success'])
-                        obj_spl_list[obj_name].append(results[obj_name]['spl'])
-                        obj_dts_list[obj_name].append(results[obj_name]['dts'])
+        ## -- load results -- ##
+        if not os.path.exists(f'{self.args.save_dir}/{self.data_type}/results'):
+            os.makedirs(f'{self.args.save_dir}/{self.data_type}/results')
+        elif os.path.isfile(f'{self.args.save_dir}/{self.data_type}/results/{self.env_name}_result.json'):
+            with open(f'{self.args.save_dir}/{self.data_type}/results/{self.env_name}_result.json', 'rb') as file:
+                results = json.load(file)
+            for cnt in range(results['total']['count']):
+                total_success.append(results['total']['success'])
+                total_spl.append(results['total']['spl'])
+                total_dts.append(results['total']['dts'])
+            for cnt in range(results['easy']['count']):
+                easy_success.append(results['easy']['success'])
+                easy_spl.append(results['easy']['spl'])
+                easy_dts.append(results['easy']['dts'])
+            for cnt in range(results['medium']['count']):
+                medium_success.append(results['medium']['success'])
+                medium_spl.append(results['medium']['spl'])
+                medium_dts.append(results['medium']['dts'])
+            for cnt in range(results['hard']['count']):
+                hard_success.append(results['hard']['success'])
+                hard_spl.append(results['hard']['spl'])
+                hard_dts.append(results['hard']['dts'])
+            for obj_name in self.goal_obj_names:
+                for cnt in range(results[obj_name]['count']):
+                    obj_success_list[obj_name].append(results[obj_name]['success'])
+                    obj_spl_list[obj_name].append(results[obj_name]['spl'])
+                    obj_dts_list[obj_name].append(results[obj_name]['dts'])
 
-                data_idx = results['total']['count']
-                print(f"Load results done to data {data_idx}")
+            data_idx = results['total']['count']
+            print(f"Load results done to data {data_idx}")
 
-        for traj in valid_traj_list[0:len(valid_traj_list):interval][data_idx:]:
+        ## -- in data split -- ##
+        start_in_data_idx = int(self.args.in_data_split / self.args.in_data_split_max * len(valid_traj_list))
+        end_in_data_idx = int((self.args.in_data_split + 1) / self.args.in_data_split_max * len(valid_traj_list))
+        data_idx = start_in_data_idx
+
+        for traj in valid_traj_list[0:len(valid_traj_list):interval][start_in_data_idx:end_in_data_idx]:
             data_idx += 1
             if data_idx > max_data_num:
                 break

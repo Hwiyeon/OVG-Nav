@@ -78,28 +78,31 @@ class MapBuilder(object):
         self.agent_height = params["agent_height"]
         self.agent_view_angle = params["agent_view_angle"]
 
-    def update_map(self, depth, current_pose, gt=False):
+        self.prev_pose = np.array([0, 0, 0])
+
+    def update_map(self, depth, current_pose, gt=False, agent_view=None):
         if gt:
             curr_map = self.gt_map
         else:
             curr_map = self.est_map
 
-        mask2 = depth > 9999.0
-        depth[mask2] = 0.0
+        if agent_view is None:
+            mask2 = depth > 9999.0
+            depth[mask2] = 0.0
 
-        for i in range(depth.shape[1]):
-            depth[:, i][depth[:, i] == 0.0] = depth[:, i].max()
+            for i in range(depth.shape[1]):
+                depth[:, i][depth[:, i] == 0.0] = depth[:, i].max()
 
-        mask1 = depth == 0
-        depth[mask1] = np.NaN
+            mask1 = depth == 0
+            depth[mask1] = np.NaN
 
-        point_cloud = du.get_point_cloud_from_z(
-            depth, self.camera_matrix, scale=self.du_scale
-        )
+            point_cloud = du.get_point_cloud_from_z(
+                depth, self.camera_matrix, scale=self.du_scale
+            )
 
-        agent_view = du.transform_camera_view(
-            point_cloud, self.agent_height, self.agent_view_angle
-        )
+            agent_view = du.transform_camera_view(
+                point_cloud, self.agent_height, self.agent_view_angle
+            )
 
         # shift_loc = [self.vision_range * self.resolution // 2, 0, np.pi / 2.0]
         # agent_view_centered = du.transform_pose(agent_view, shift_loc)
@@ -147,6 +150,49 @@ class MapBuilder(object):
 
         return map_gt, explored_gt, wall_map_gt
 
+    def get_curr_obsmap(self, depth):
+        curr_map = self.gt_map
+
+        mask2 = depth > 9999.0
+        depth[mask2] = 0.0
+
+        for i in range(depth.shape[1]):
+            depth[:, i][depth[:, i] == 0.0] = depth[:, i].max()
+
+        mask1 = depth == 0
+        depth[mask1] = np.NaN
+
+        point_cloud = du.get_point_cloud_from_z(
+            depth, self.camera_matrix, scale=self.du_scale
+        )
+
+        agent_view = du.transform_camera_view(
+            point_cloud, self.agent_height, self.agent_view_angle
+        )
+
+        geocentric_pc = du.transform_pose(agent_view, self.prev_pose)
+
+        geocentric_flat, is_valids = du.bin_points(
+            geocentric_pc, curr_map.shape[0], self.z_bins, self.resolution
+        )
+
+
+        curr_map = geocentric_flat
+
+        map_gt = (curr_map[:, :, 1] + curr_map[:, :, 2]) // self.obs_threshold
+        map_gt[map_gt >= 0.5] = 1.0
+        map_gt[map_gt < 0.5] = 0.0
+
+        wall_map_gt = curr_map[:, :, 2] // self.obs_threshold
+        map_gt[map_gt >= 0.5] = 1.0
+        map_gt[map_gt < 0.5] = 0.0
+
+        explored_gt = curr_map.sum(2)
+        explored_gt[explored_gt > 1] = 1.0
+
+        return agent_view, map_gt, explored_gt, wall_map_gt
+
+
     def get_st_pose(self, current_loc):
         loc = [
             -(
@@ -181,6 +227,8 @@ class MapBuilder(object):
             ),
             dtype=np.float32,
         )
+
+        self.prev_pose = np.array([0, 0, 0])
 
     def get_map(self, gt=False):
         if gt:

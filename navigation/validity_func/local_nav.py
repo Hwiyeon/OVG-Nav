@@ -85,12 +85,13 @@ class LocalAgent(object):
 
         self.est_local_visit = np.zeros(self.mapper.get_map()[:, :, 1].shape)
         self.gt_local_visit = np.zeros(self.mapper.get_map()[:, :, 1].shape)
+        self.mapper.prev_pose = (self.x_gt, self.y_gt, self.o_gt)
 
     def update_curr_pose(self, curr_pos, curr_rot):
         self.curr_pos = curr_pos
         self.curr_rot = curr_rot
 
-    def update_gt_local_map(self, depth_m):
+    def update_gt_local_map(self, depth_m, agent_view=None):
         x_gt, y_gt, o_gt = self.get_mapper_pose_from_sim_pose(
             self.gt_new_sim_origin,
             self.sim_origin,
@@ -104,8 +105,10 @@ class LocalAgent(object):
         self.gt_local_map, self.gt_local_exp_map, _ = self.mapper.update_map(
             depth_cm, (x, y, o),
             # curr_depth_img, (x, y, o)
-            gt=True
+            gt=True,
+            agent_view = agent_view
         )
+        self.mapper.prev_pose = (x, y, o)
         for locs in self.gt_collision_locs:
             self.gt_local_map[locs[0], locs[1]] = 1.0
             self.gt_local_exp_map[locs[0], locs[1]] = 1.0
@@ -369,7 +372,7 @@ class LocalAgent(object):
         return goal, goal_updated
 
 
-    def get_observed_colored_map(self, gt=False):
+    def get_observed_colored_map(self, gt=True):
 
         def fill_color(colored, mat, color):
             for i in range(3):
