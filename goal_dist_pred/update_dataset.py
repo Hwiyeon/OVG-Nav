@@ -16,6 +16,7 @@ parser.add_argument('--vis_feat_dim', default=512, type=int)
 parser.add_argument('--goal_type_num', default=6, type=int)
 parser.add_argument('--max_dist', default=5., type=float)
 parser.add_argument('--use_cm_score', default=True, type=bool)
+parser.add_argument("--cm_type", type=str, default="comet")
 
 # Optimization options
 parser.add_argument('--batch-size', type=int, default=32, help="learning rate (default: 1e-05)")
@@ -32,7 +33,7 @@ parser.add_argument('--seed', type=int, default=1, help="random seed (default: 1
 parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0806/21cat_relative_pose_step_by_step_pano_connect_edge1_v1.2', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
 parser.add_argument('--log_dir', default='logs/cm_0607/0607_{}_lr{}_test', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
@@ -384,7 +385,7 @@ def main():
     #         break
     #     except:
     #         print(data)
-    #         os.system(f"rm -r {data}")
+    #         # os.system(f"rm -r {data}")
     #         invalid_list.append(data)
 
     for data in tqdm(train_list, total=len(train_list)):
@@ -400,4 +401,4 @@ def main():
             invalid_list.append(data)
 
 if __name__ == '__main__':
-    main_0()
+    main()

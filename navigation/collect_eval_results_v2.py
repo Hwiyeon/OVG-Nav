@@ -57,6 +57,6 @@ def collect_eval_results(eval_name, obj_type='mp3d'):
 
 
 if __name__ == '__main__':
-    success_results = collect_eval_results('/disk1/hwing/Dataset/cm_graph/mp3d/val/policy3_runninghalf_03-03_mp3d21_edge1_datav2_aug2_panov4_2_layer5_hidden512_goalscore_w_adjmtx_valueloss1.0_adjloss100.0_hoploss_visited100.0_signloss0.001_use_cm_maxdist30.0_lr0.0001',
+    success_results = collect_eval_results('/disk1/hwing/Dataset/cm_graph/mp3d/val/cpu_invalid_node_v2_16-56_mp3d21_edge1v1.12_panov8_layer10_hidden512_epoch_6_goalscore_w_adjmtx_valueloss1.0_adjloss100.0_adjsimlos0.0_signloss0.0_use_cm_maxdist30.0_lr0.001',
                                            obj_type='mp3d_21')
     print(success_results)

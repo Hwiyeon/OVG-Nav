@@ -13,14 +13,14 @@ from enum import Enum
 import cv2
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 torch.set_num_threads(1)
-torch.manual_seed(100)
 
 import numpy as np
 from PIL import Image
 # from settings import default_sim_settings, make_cfg
 from navigation.configs.settings_pano_navi import make_cfg
-from habitat_sim.utils.common import d3_40_colors_rgb
+# from habitat_sim.utils.common import d3_40_colors_rgb
 # from detector.detector_mask import Detector
 import quaternion
 from scipy.spatial.transform import Rotation as R
@@ -50,7 +50,8 @@ import time
 import json
 from utils.visualizations.maps import get_topdown_map_from_sim, to_grid, TopdownView
 from utils.graph_utils.graph_pano_cs import GraphMap
-from utils.obj_category_info import assign_room_category, obj_names_det as obj_names, gibson_goal_obj_names, mp3d_goal_obj_names, room_names, mp3d_room_names, rednet_obj_names
+from utils.graph_utils.cand_node_utils import get_range_cand_nodes
+from utils.obj_category_info import assign_room_category, obj_names_det as obj_names, gibson_goal_obj_names, mp3d_goal_obj_names, room_names, mp3d_room_names, d3_40_colors_rgb, rednet_obj_names
 
 from tqdm import tqdm
 import pickle
@@ -63,7 +64,6 @@ from modules.visual_odometry.keypoint_matching import KeypointMatching
 from goal_dist_pred.model_value_graph_0607 import TopoGCN_v8_pano_goalscore as ValueModel
 
 from navigation.local_navigation import LocalNavigation
-from utils.graph_utils.cand_node_utils import get_range_cand_nodes
 
 
 
@@ -134,7 +134,7 @@ class Runner:
             self.goal_obj_names = mp3d_goal_obj_names
         elif args.dataset == 'gibson':
             self.goal_obj_names = gibson_goal_obj_names
-
+        # self.sge_th = args.sge_th
         if self.args.goal_cat == 'mp3d_21':
             self.goal_obj_names = rednet_obj_names
 
@@ -144,7 +144,7 @@ class Runner:
         self.edge_range = args.edge_range
         self.last_mile_range = args.last_mile_range
         self.goal_det_dist = args.success_dist - args.move_forward
-        self.goal_obs_consistency_th = args.goal_obs_count  # number of time steps that the goal is visible for the goal to be considered as correctly detected
+        self.goal_obs_consistency_th = args.goal_obs_count # number of time steps that the goal is visible for the goal to be considered as correctly detected
 
         self.vo_height = args.front_height
         self.vo_width = args.front_width
@@ -193,7 +193,7 @@ class Runner:
         self.value_model = self.value_model.to(f'cuda:{args.model_gpu}')
         self.value_model.eval()
 
-        self.local_navi_module = LocalNavigation(self.args, self.vo_model)
+        # self.local_navi_module = LocalNavigation(self.args, self.vo_model)
         self.local_agent = LocalAgent(self.args)
         self.local_mapper = build_mapper(self.args)
 
@@ -203,7 +203,40 @@ class Runner:
         self.use_oracle = args.use_oracle
         self.cm_type = args.cm_type  ### 'comet or mp3d'
 
-        self.cand_node_frame = get_range_cand_nodes(int(args.sensing_range/self.edge_range), self.edge_range)
+        self.cand_node_frame = get_range_cand_nodes(int(args.sensing_range / self.edge_range), self.edge_range)
+
+        ## -- localization template -- ##
+
+        self.rot_grid = {'move_forward': [], 'turn_left': [], 'turn_right': []}
+        rot_angle = 5 * np.pi / 180.
+        self.localize_rot_num = 7
+        self.rot_grid_headings = {'move_forward': [], 'turn_left': [], 'turn_right': []}
+        for i in range(-3, 4):
+            angle_0 = rot_angle * i
+            self.rot_grid['move_forward'].append(torch.FloatTensor(
+                [[np.cos(angle_0), -np.sin(angle_0), 0],
+                 [np.sin(angle_0), np.cos(angle_0), 0]]))
+            self.rot_grid_headings['move_forward'].append(-angle_0)
+
+            angle_1 = rot_angle * i - self.act_rot * np.pi / 180
+            self.rot_grid['turn_left'].append(torch.FloatTensor(
+                [[np.cos(angle_1), -np.sin(angle_1), 0],
+                 [np.sin(angle_1), np.cos(angle_1), 0]]))
+            self.rot_grid_headings['turn_left'].append(-angle_1)
+
+            angle_2 = rot_angle * i + self.act_rot * np.pi / 180
+            self.rot_grid['turn_right'].append(torch.FloatTensor(
+                [[np.cos(angle_2), -np.sin(angle_2), 0],
+                 [np.sin(angle_2), np.cos(angle_2), 0]]))
+            self.rot_grid_headings['turn_right'].append(-angle_2)
+        local_map_size = self.local_mapper.gt_map.shape[0]
+        self.local_map_size = local_map_size
+        self.rot_grid['move_forward'] = torch.stack(self.rot_grid['move_forward'])
+        self.rot_grid['move_forward'] = F.affine_grid(self.rot_grid['move_forward'], torch.Size((self.localize_rot_num, 1, local_map_size, local_map_size)))
+        self.rot_grid['turn_left'] = torch.stack(self.rot_grid['turn_left'])
+        self.rot_grid['turn_left'] = F.affine_grid(self.rot_grid['turn_left'], torch.Size((self.localize_rot_num, 1, local_map_size, local_map_size)))
+        self.rot_grid['turn_right'] = torch.stack(self.rot_grid['turn_right'])
+        self.rot_grid['turn_right'] = F.affine_grid(self.rot_grid['turn_right'], torch.Size((self.localize_rot_num, 1, local_map_size, local_map_size)))
 
 
 
@@ -218,8 +251,8 @@ class Runner:
             rgb_name = 'pano_rgb'
             depth_name = 'pano_depth'
         else:
-            width = 320  # self.vo_width
-            height = 240   # self.vo_height
+            width = 320 # self.vo_width
+            height = 240 # self.vo_height
             rgb_name = 'rgb'
             depth_name = 'depth'
 
@@ -249,7 +282,6 @@ class Runner:
 
         width = np.shape(frame_list[0])[1]
         height = np.shape(frame_list[0])[0]
-
 
         video = cv2.VideoWriter(f'{save_dir}/{epi_name}.avi', cv2.VideoWriter_fourcc(*'XVID'), 5,
                                 (width, height))
@@ -287,9 +319,10 @@ class Runner:
         frame[rh+ph+gh:, :lw, :] = local_map[:, :, :3]
         frame = frame.astype(np.uint8)
 
+
         ## text
         text1 = "Target object goal: {}   Mode: {}".format(info['target_goal'], info['mode'])
-        text2 = "Step: {},  Position: {}".format(info['step'], info['cur_position'])
+        text2 = "Step: {}   Position: {}".format(info['step'], info['cur_position'])
         font_color = (255, 255, 255)
         text_size, _ = cv2.getTextSize(text1, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
         # text_position1 = (int((frame.shape[1] - text_size[0]) / 2), frame.shape[0] + text_size[1] * 2 + 10)
@@ -301,49 +334,10 @@ class Runner:
         canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
         canvas[:frame.shape[0], :] = frame
         # canvas = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
-        frame2 = cv2.putText(canvas, text1, text_position1, cv2.FONT_HERSHEY_SIMPLEX, 0.4, font_color, 1,
-                             cv2.LINE_AA)
-        frame2 = cv2.putText(canvas, text2, text_position2, cv2.FONT_HERSHEY_SIMPLEX, 0.4, font_color, 1,
-                             cv2.LINE_AA)
+        frame2 = cv2.putText(canvas, text1, text_position1, cv2.FONT_HERSHEY_SIMPLEX, 0.4, font_color, 1, cv2.LINE_AA)
+        frame2 = cv2.putText(canvas, text2, text_position2, cv2.FONT_HERSHEY_SIMPLEX, 0.4, font_color, 1, cv2.LINE_AA)
 
         return frame2
-        # figure, ax = plt.subplots(1, 1, facecolor="whitesmoke")
-        # figure.show()
-        # figure.canvas.draw()
-        #
-        # ax.clear()
-        #
-        # def draw(ax, img):
-        #     ax.imshow(img)
-        #     ax.set_yticks([])
-        #     ax.set_xticks([])
-        #     ax.set_yticklabels([])
-        #     ax.set_xticklabels([])
-        #     ax.text(0.5, -0.1, 'Target object goal: {}   Mode: {}\n Position: {}'.format(info['target_goal'],
-        #                                                                                      info['mode'],
-        #                                                                                      info['cur_position']),
-        #                 ha='center', fontsize=10, transform=ax.transAxes)
-        #     for _ in range(5):
-        #         plt.tight_layout()
-        #     return ax
-        #
-        # background = figure.canvas.copy_from_bbox(ax.bbox)
-        # figure.canvas.restore_region(background)
-        # ax.draw_artist(draw(ax, frame))
-        #
-        #
-        #
-        #
-        #
-        #
-        # # for _ in range(5):
-        # #     plt.tight_layout()
-        # # figure.canvas.draw()
-        # out_img = np.fromstring(figure.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-        # out_img = out_img.reshape(figure.canvas.get_width_height()[::-1] + (3,))
-        # plt.close()
-        #
-        # return out_img
 
 
     def panoramic_obs(self, obs, semantic=False):
@@ -371,6 +365,23 @@ class Runner:
 
         random.seed(self._sim_settings["seed"])
         self._sim.seed(self._sim_settings["seed"])
+
+    # def init_commonsense_candidate_room(self, goal_names, candidate_names):
+    #     goal_category_room = {}
+    #     goal_category_room_feat = {}
+    #     goal_category_room_score = {}
+    #     cand_room_feat = self.common_sense_model.clip.get_text_feat(candidate_names).type(torch.float32)
+    #     for goal_name in goal_names:
+    #         pred_words = self.common_sense_model.gen_pred_words(goal_name, num_generate=10)
+    #         pred_words_feat = self.common_sense_model.clip.get_text_feat(pred_words).type(torch.float32)
+    #         value, indice = torch.max(self.common_sense_model.clip.get_sim_from_feats(cand_room_feat, pred_words_feat).type(torch.float32),
+    #                                   dim=0)
+    #         topk = torch.topk(value, k=5, largest=True).indices.detach().cpu().numpy()
+    #         goal_category_room[goal_name] = [candidate_names[i] for i in topk]
+    #         goal_category_room_feat[goal_name] = torch.stack([cand_room_feat[i].detach().cpu() for i in topk])
+    #         goal_category_room_score[goal_name] = np.array([value[i].detach().cpu().numpy() for i in topk])
+    #
+    #     return goal_category_room, goal_category_room_feat, goal_category_room_score
 
     def init_commonsense_candidate_room(self, goal_names, candidate_names):
         goal_category_room = {}
@@ -519,8 +530,6 @@ class Runner:
             pos2 = np.array(edge.nodes[1].pos) if edge.nodes[1].vis_pos is None else np.array(edge.nodes[1].vis_pos)
             node_grid1 = self.get_vis_grid_pose(pos1 + bias_position, self.curr_level)
             node_grid2 = self.get_vis_grid_pose(pos2 + bias_position, self.curr_level)
-            # node_grid1 = self.get_vis_grid_pose(np.array(edge.nodes[0].pos) + bias_position, self.curr_level)
-            # node_grid2 = self.get_vis_grid_pose(np.array(edge.nodes[1].pos) + bias_position, self.curr_level)
             vis_map = cv2.line(vis_map, node_grid1, node_grid2, (0, 64, 64), 5)
             edge.draw = True
 
@@ -534,10 +543,9 @@ class Runner:
 
             # if node.draw and node.nodeid != curr_node_id and node.nodeid != curr_goal_node_id:
             #     continue
-
             node_pos = np.array(node.pos) if node.vis_pos is None else np.array(node.vis_pos)
+
             node_grid = self.get_vis_grid_pose(node_pos + bias_position, self.curr_level)
-            # node_grid = self.get_vis_grid_pose(np.array(node.pos) + bias_position, self.curr_level)
             if vis_obj_score is not None:
                 # color = (np.array((0, 255, 0)) * self.node_value_by_obj_dist(node.dist_to_objs[vis_obj_score])).astype(int)
                 # color = (np.array((0, 255, 0)) * node.cm_score).astype(int)
@@ -547,6 +555,7 @@ class Runner:
                 # cand_color = (np.array((0, 0, 255)) * self.node_value_by_obj_dist(
                 #     node.dist_to_objs[vis_obj_score])).astype(int)
                 # cand_color = (np.array((0, 0, 255)) * node.cm_score).astype(int)
+                # cand_color = (np.array((0, 0, 255)) * cm_scores[idx]).astype(int)
                 cand_color = (np.array((0, 0, 255))).astype(int)
                 cand_color = tuple([cand_color[i].item() for i in range(3)])
                 goal_color = (255, 255, 0)
@@ -622,6 +631,7 @@ class Runner:
 
         if curr_position is not None:
             node_grid = self.get_vis_grid_pose(curr_position + bias_position, self.curr_level)
+            # vis_map = cv2.circle(vis_map, node_grid, 10, (255, 255, 0), -1)
             vis_map = cv2.rectangle(vis_map, (node_grid[0] - 8, node_grid[1] - 8), (node_grid[0] + 8, node_grid[1] + 8),
                                     (255, 0, 0), -1)
         if curr_goal_position is not None:
@@ -631,20 +641,20 @@ class Runner:
 
         if result is not None:
             success = 'SUCCESS' if result['success'] == 1 else 'FAIL'
-            txt = 'goal: {}, {}, SPL: {:.4f}, min_dist_to_viewpoint {:.4f}, min_dist_to_object_center {:.4f}, actions {}'.format(result['goal object'], success,
-                                                                                  result['spl'],
-                                                                                  result['dts'],
-                                                                                  result['min_dist_to_goal_center'],
-                                                                                  result['action step'])
+            txt = 'goal: {}, {}, SPL: {:.4f}, DTS {:.4f}, min_dist_to_object_center {:.4f}, actions {}'.format(
+                result['goal object'], success,
+                result['spl'],
+                result['dts'],
+                result['min_dist_to_goal_center'],
+                result['action step'])
 
             txt1 = 'goal: {}, {}, SPL: {:.4f}, actions {}'.format(
                 result['goal object'], success,
                 result['spl'],
                 result['action step'])
-            txt2 = 'viewpoint dist {:.4f}, obj center dist {:.4f}'.format(
+            txt2 = 'DTS {:.4f}, obj center dist {:.4f}'.format(
                 result['dts'],
                 result['min_dist_to_goal_center'])
-
 
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale = 1
@@ -693,42 +703,15 @@ class Runner:
         ])
         return grid_bbox
 
-    # def vis_topdown_obj_map(self, vis_map, obj_category):
-    #     for obj in self.env_obj_info:
-    #         agent_level = self.check_position2level(self.scene_height)
-    #         if obj['category'] == obj_category and agent_level == obj['level']:
-    #             grid_bbox = self.get_bbox_from_pos_size(obj['position'], obj['sizes'])
-    #             grid_bbox = grid_bbox.tolist()
-    #             shapes = np.zeros_like(vis_map, np.uint8)
-    #             cv2.rectangle(shapes, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (0, 0, 128), -1)
-    #             alpha = 0.3
-    #             mask = shapes.astype(bool)
-    #             vis_map[mask] = cv2.addWeighted(vis_map, alpha, shapes, 1 - alpha, 0)[mask]
-    #
-    #     return vis_map
-    #
-    # def vis_topdown_goal_obj_map(self, vis_map, goal_obj_category):
-    #     for obj in self.env_goal_obj_info:
-    #         agent_level = self.check_position2level(self.scene_height)
-    #         if obj['category'] == goal_obj_category and agent_level == obj['level']:
-    #             grid_bbox = self.get_bbox_from_pos_size(obj['position'], obj['sizes'])
-    #             grid_bbox = grid_bbox.tolist()
-    #             shapes = np.zeros_like(vis_map, np.uint8)
-    #             cv2.rectangle(shapes, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (255, 128, 0), -1)
-    #             alpha = 0.3
-    #             # mask = shapes.astype(bool)
-    #             mask = np.repeat(np.sum(shapes, axis=2).astype(bool)[:, :, np.newaxis], 3, axis=2)
-    #             vis_map[mask] = cv2.addWeighted(vis_map, alpha, shapes, 1-alpha, 0)[mask]
-    #             # vis_map = cv2.rectangle(vis_map, tuple(grid_bbox[0]), tuple(grid_bbox[1]), (255, 0, 0), -1)
-    #     return vis_map
 
 
     def vis_topdown_map_with_captions(self, graph_map, curr_node=None, curr_goal_node=None,
                                       bias_position=None, curr_position=None, curr_goal_position=None,
                                       vis_goal_obj_score=None, vis_obj=None,
                                       visited_positions=None):
-        # vis_map = self.map.copy()
+        # vis_map = self.base_map.copy()
         vis_map = np.zeros_like(self.base_map)
+
         # if vis_obj is not None:
         #     vis_map = self.vis_topdown_obj_map(vis_map, vis_obj)
 
@@ -748,7 +731,6 @@ class Runner:
                                                 visited_positions=visited_positions)
 
         self.cur_graph_map = vis_map
-        # mask = self.cur_graph_map.astype(bool)
         mask = np.repeat(np.sum(self.cur_graph_map, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
         vis_map[np.logical_not(mask)] = cv2.addWeighted(self.base_map, 1.0, self.cur_graph_map, 0.0, 0)[np.logical_not(mask)]
 
@@ -761,42 +743,6 @@ class Runner:
 
 
         return vis_map
-        # figure, ax = plt.subplots(1, 1, facecolor="whitesmoke")
-        # figure.show()
-        # figure.canvas.draw()
-        #
-        # ax.clear()
-        #
-        # def draw(ax, img):
-        #     ax.imshow(img)
-        #     ax.set_yticks([])
-        #     ax.set_xticks([])
-        #     ax.set_yticklabels([])
-        #     ax.set_xticklabels([])
-        #     for _ in range(5):
-        #         plt.tight_layout()
-        #     return ax
-        #
-        # background = figure.canvas.copy_from_bbox(ax.bbox)
-        # figure.canvas.restore_region(background)
-        # ax.draw_artist(draw(ax, vis_map))
-        # figure.canvas.blit(ax.bbox)
-        #
-        # # ax.set_title(f'Target object goal : {goal_obj_names[vis_goal_obj_score]}\n', wrap=True, horizontalalignment='center', fontsize=12)
-        #
-        #
-        # if vis_obj is not None:
-        #     plt.figtext(0.5, 0.05, f'Object position : {obj_names[vis_obj]}\n', wrap=True, horizontalalignment='center', fontsize=8)
-        # if save_dir is not None:
-        #     plt.savefig(save_dir)
-        # else:
-        #
-        #     out_img = np.fromstring(figure.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-        #     out_img = out_img.reshape(figure.canvas.get_width_height()[::-1] + (3,))
-        #     plt.close()
-        #     return out_img
-        # plt.close()
-        # return None
 
 
     def check_position2room(self, position, room_info, vis=False):
@@ -834,6 +780,31 @@ class Runner:
                 cur_room.append(room['category'])
 
         return cur_room
+
+    def crop_and_pad(self, tensor, x, y):
+        height, width = tensor.shape
+        crop_size_x = height // 2
+        crop_size_y = width // 2
+
+        # Define the start and end points for cropping
+        x_start = max(x - crop_size_x, 0)
+        x_end = min(x + crop_size_x + (height % 2), height)
+        y_start = max(y - crop_size_y, 0)
+        y_end = min(y + crop_size_y + (width % 2), width)
+
+        # Determine padding values
+        pad_top = max(crop_size_x - x, 0)
+        pad_bottom = max(x + crop_size_x + (height % 2) - height, 0)
+        pad_left = max(crop_size_y - y, 0)
+        pad_right = max(y + crop_size_y + (width % 2) - width, 0)
+
+        # Crop the tensor
+        cropped = tensor[x_start:x_end, y_start:y_end]
+
+        # Pad with zeros to match the original shape
+        result = torch.nn.functional.pad(cropped, (pad_left, pad_right, pad_top, pad_bottom), 'constant', 0)
+
+        return result
 
     def check_position2level(self, pos):
         # if len(position) == 3:
@@ -881,27 +852,79 @@ class Runner:
     def dist_euclidean_floor(self, pos1, pos2):
         return np.sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[2] - pos2[2]) ** 2)
 
-    # def dist_to_objs(self, pos):
-    #     dist = np.full(len(self.goal_obj_names), np.inf)
-    #     is_valid_point = True
-    #     # cur_goal_info = self._sim.semantic_scene.objects[int(self.goal_info['id'].split('_')[-1])]
-    #     for i, obj in enumerate(self.env_goal_obj_info):
-    #
-    #         is_valid, geo_dist = self.check_goal_point_validity(pos, obj['position'], is_goal_obj=True)
-    #         if not is_valid: pass
-    #
-    #         if geo_dist < dist[obj['category']]:
-    #             dist[obj['category']] = geo_dist
-    #             if obj['category'] == self.goal_class_idx:
-    #                 cur_goal_info = self._sim.semantic_scene.objects[obj['id']]
-    #                 # self.update_goal_info(goal_info)
-    #
-    #
-    #     if np.sum(dist != np.full(len(self.goal_obj_names), np.inf)) == 0:
-    #         is_valid_point = False
-    #     self.update_goal_info(cur_goal_info)
-    #
-    #     return dist, is_valid_point
+
+    def get_vo_relative_camera_pose0(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, initial_guess=None):
+        if initial_guess is None:
+            initial_guess = self.vo_model.get_extrinsic_guess_from_action(action)
+        torch.set_num_threads(1)
+        est_pos_diff, est_rot_diff, keypoint_est_success = self.vo_model.get_relative_camera_pose(
+                                                            prev_rgb, prev_depth, curr_rgb, initial_guess, rot_vec=True)
+
+        # ## -- transform to habitat coordinate -- ##
+        # est_pos_diff[2] = -est_pos_diff[2]
+        # est_pos_diff[1] = -est_pos_diff[1]
+
+        rot = R.from_rotvec(cur_rotation)
+        rot.as_matrix()
+        est_pos_diff = rot.apply(est_pos_diff)
+
+
+        return est_pos_diff, est_rot_diff, keypoint_est_success
+
+    def get_vo_relative_camera_pose(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, prev_local_map, curr_local_map, initial_guess=None):
+        # if initial_guess is None:
+        #     initial_guess = self.vo_model.get_extrinsic_guess_from_action(action)
+
+
+        curr_map = torch.Tensor(curr_local_map).unsqueeze(0).unsqueeze(0)
+        if action == 'move_forward':
+            unit_vec = -np.array([np.sin(cur_rotation[1]), 0, np.cos(cur_rotation[1])])
+            cand_pos = self.cur_position + unit_vec * self.step_size
+            cand_pose_for_map = (cand_pos[0], cand_pos[2], cur_rotation[1])
+            cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, (
+                                        self.cur_position[0], self.cur_position[2], 0))
+            cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
+            prev_map = self.crop_and_pad(torch.Tensor(prev_local_map), cand_pose_on_grid_map[0], cand_pose_on_grid_map[1])
+            prev_map = prev_map.unsqueeze(0).unsqueeze(0)
+        else:
+            prev_map = torch.Tensor(prev_local_map).unsqueeze(0).unsqueeze(0)
+
+
+        rot_filter = F.grid_sample(curr_map.repeat(self.localize_rot_num, 1, 1, 1), self.rot_grid[action])
+        localize = F.conv2d(prev_map, rot_filter, padding=3)
+        cand_map_idx = np.unravel_index(np.argmax(localize), localize.shape)
+
+        if torch.max(localize) == 0:
+            initial_guess = self.vo_model.get_extrinsic_guess_from_action(action)
+        else:
+            rot_guess = np.array([0, self.rot_grid_headings[action][cand_map_idx[1]], 0]).astype(np.float32)
+
+            if action == 'move_forward':
+                cand_map_pos_idx = (cand_pose_on_grid_map[1] + cand_map_idx[3] - 4, cand_pose_on_grid_map[0] + cand_map_idx[2] - 4)
+            else:
+                cand_map_pos_idx = (int(self.local_map_size/2) + cand_map_idx[3] - 4, int(self.local_map_size/2) + cand_map_idx[2] - 4)
+            pos_guess = self.local_mapper.get_sim_pose_from_mapper_coords(cand_map_pos_idx, (0,0,0), rot_guess)
+
+            initial_guess = {
+                'tvec': pos_guess,
+                'rvec': rot_guess
+            }
+
+        torch.set_num_threads(1)
+        est_pos_diff, est_rot_diff, keypoint_est_success = self.vo_model.get_relative_camera_pose(
+                                                            prev_rgb, prev_depth, curr_rgb, initial_guess, rot_vec=True)
+
+        # ## -- transform to habitat coordinate -- ##
+        # est_pos_diff[2] = -est_pos_diff[2]
+        # est_pos_diff[1] = -est_pos_diff[1]
+
+        rot = R.from_rotvec(cur_rotation)
+        rot.as_matrix()
+        est_pos_diff = rot.apply(est_pos_diff)
+
+
+        return est_pos_diff, est_rot_diff, keypoint_est_success
+
 
     def dist_to_objs(self, pos):
         dist = np.full(len(self.goal_obj_names), np.inf)
@@ -910,23 +933,6 @@ class Runner:
         # for i in range(len(self.goal_obj_names)):
         dist[self.goal_class_idx] = self.get_geodesic_distance_to_object_category(pos, self.goal_info['category'],
                                                                                   target_view_points=self.goal_info['view_points'])
-
-
-
-        # cur_goal_info = self._sim.semantic_scene.objects[int(self.goal_info['id'].split('_')[-1])]
-        # for i, obj in enumerate(self.env_goal_obj_info):
-        #
-        #     is_valid, geo_dist = self.check_goal_point_validity(pos, obj['position'], is_goal_obj=True)
-        #     if not is_valid: pass
-        #
-        #     if geo_dist < dist[obj['category']]:
-        #         dist[obj['category']] = geo_dist
-        #         if obj['category'] == self.goal_class_idx:
-        #             cur_goal_info = self._sim.semantic_scene.objects[obj['id']]
-
-
-                    # self.update_goal_info(goal_info)
-
 
         if np.sum(dist != np.full(len(self.goal_obj_names), np.inf)) == 0:
             is_valid_point = False
@@ -976,8 +982,8 @@ class Runner:
     def get_dirc_imgs_from_pano(self, pano_img, num_imgs=12):
         pw, ph = self.pano_width, self.pano_height
 
-        width_bias = int(1/(self.rot_num*2) * pw)
-        width_half =int(ph/2)
+        width_bias = int(1 / (self.rot_num * 2) * pw)
+        width_half = int(ph / 2)
 
         # split the panorama into 12 square images with even angles
         dirc_imgs = []
@@ -1210,7 +1216,7 @@ class Runner:
         # for global coordinate
         # turn left = positive angle
         # free cand angle idx --> right side is positive
-
+        torch.set_num_threads(1)
         free_cand_nodes = self.free_space_model.predict_free_space(pano_rgb)
         pano_split_images = self.get_dirc_imgs_from_pano(pano_rgb)
 
@@ -1274,10 +1280,13 @@ class Runner:
                                                            :5]  ## weighted by room category
                 cand_node.update_goal_cm_scores(weighted_goal_cm_scores, connected_nodes[key]['heading_idx'])
 
+
+
             self.graph_map.update_node_feat(cand_node)
             self.graph_map.add_edge(cur_node, cand_node)
 
         return
+
 
     def get_value_graph(self):
         nodes = [self.graph_map.node_by_id[id] for id in self.graph_map.node_by_id.keys()]
@@ -1411,7 +1420,8 @@ class Runner:
             obj_min_dist = 9999
             obj_min_pixel = None
             closest_obj_id = None
-            rgb = rgb[:, :, :3]
+            rgb = rgb[:,:,:3]
+            torch.set_num_threads(1)
             if vis:
                 img, pred_classes, scores, pred_out, masks, boxes = self.detector.predicted_img(rgb, show=True)
             else:
@@ -1455,6 +1465,7 @@ class Runner:
 
             in_rgb, in_depth = torch.from_numpy(in_rgb).float().to(f"cuda:{self.args.model_gpu}"), torch.from_numpy(in_depth).float().to(f"cuda:{self.args.model_gpu}")
             in_rgb, in_depth = in_rgb.unsqueeze(0), in_depth.unsqueeze(0)
+            torch.set_num_threads(1)
             pred = self.detector.get_predictions(in_rgb, in_depth)[0]
 
             pred_mask = pred[self.goal_class_idx].cpu().numpy().astype(np.uint8)
@@ -1470,6 +1481,7 @@ class Runner:
                 obj_min_dist = 9999
                 obj_min_pixel = None
 
+
             det_out = {
                 'obj_min_dist': obj_min_dist,
                 'obj_min_pixel': obj_min_pixel
@@ -1477,11 +1489,18 @@ class Runner:
             if vis:
                 det_img = self.detector.visualize_rednet_pred(pred)
                 alpha = 0.3
-                mask = np.repeat(np.sum(det_img, axis=2).astype(bool)[:,:,np.newaxis], 3, axis=2)
+                mask = np.repeat(np.sum(det_img, axis=2).astype(bool)[:, :, np.newaxis], 3, axis=2)
                 rgb[mask] = cv2.addWeighted(rgb, alpha, det_img, 1 - alpha, 0)[mask]
 
                 det_out['det_img'] = rgb
             return det_out, obj_min_dist
+
+
+
+
+
+
+
 
     def check_pano_goal_det(self, pano_rgb, curr_node, pos, rot, vis=False):
         # pano_rgb = pano_rgb.astype(np.uint8)
@@ -1495,7 +1514,7 @@ class Runner:
         #     if goal_idx == self.goal_class_idx:
         #         ## --- get heading of the object from the current rotation --- ##
         #         center_x = int(np.median(np.where(np.sum(masks[i], axis=0) > 0)))
-        #         head_x = int(center_x / (np.shape(pano_rgb)[1] + 1) * 12) - 1
+        #         head_x = int(center_x / (np.shape(pano_rgb)[1]+1) * 12) - 1
         #         rot_angle = self.cand_angle[head_x]
         #
         #         rot_to_face = rot_angle // self.act_rot
@@ -1516,7 +1535,6 @@ class Runner:
         #         pos = self.cur_position
         #         rot = self.cur_rotation
         #         break
-        #
         #         # ## --- check if node exists in heading position --- ##
         #         # rot_vec = rot + np.radians(-rot_angle) * rot_axis
         #         # unit_vec = -np.array([np.sin(rot_vec[1]), 0, np.cos(rot_vec[1])])
@@ -1541,8 +1559,9 @@ class Runner:
         #         #             # last mile navigation activated in explicit action
         #         #             return
         #         #
-        #         # pos = self.cur_position
-        #         # rot = self.cur_rotation
+        #         #     pos = self.cur_position
+        #         #     rot = self.cur_rotation
+
 
         return
 
@@ -1580,6 +1599,7 @@ class Runner:
             self.graph_map.update_node_clip_feat(cand_node, cand_node_info['clip_feat'], cand_node_info['heading_idx'])
             self.graph_map.update_node_vis_feat(cand_node)
 
+
             torch.set_num_threads(1)
             if self.cm_type == 'comet':
                 goal_cm_scores, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat,
@@ -1600,16 +1620,16 @@ class Runner:
                 weighted_goal_cm_scores = goal_cm_scores * self.cand_category_room_score[self.goal_info['category']][
                                                            :5]  ## weighted by room category
                 cand_node.update_goal_cm_scores(weighted_goal_cm_scores, cand_node_info['heading_idx'])
+
+
+
+
             self.graph_map.update_node_feat(cand_node)
-            # self.graph_map.update_node_cm_score(cand_node, cand_node_info['cm_score'])
-
             if add_new_node:
+                # self.graph_map.update_node_cm_score(cand_node, cand_node_info['cm_score'])
 
-
-                curr_dist_to_objs, curr_is_valid = self.dist_to_objs(cand_node_info['vis_position'] + self.abs_init_position)
+                curr_dist_to_objs, curr_is_valid = self.dist_to_objs(cand_node_info['position'] + self.abs_init_position)
                 self.graph_map.update_node_dist_to_objs(cand_node, curr_dist_to_objs)
-
-
                 # if self.vis_floorplan:
                 cand_node.vis_pos = cand_node_info['vis_position']
 
@@ -1650,21 +1670,33 @@ class Runner:
 
     def do_explicit_action(self, cur_node, action, curr_goal_node=None):
         abs_prev_position = self._sim.agents[0].get_state().position
+
+        prev_obs = self._sim.get_sensor_observations()
+        prev_rgb = prev_obs['color_sensor'][:,:,:3]
+        prev_depth = prev_obs['depth_sensor']
+        # prev_local_map = self.local_agent.get_observed_colored_map(gt=True)
+        # prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
+        prev_local_map = self.local_agent.gt_local_map
+
         obs = self._sim.step(action)
+
+        curr_rgb = obs['color_sensor'][:,:,:3]
+        curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
+        # curr_local_map = self.local_agent.get_observed_colored_map(gt=True)
+
         self.abs_position = self._sim.agents[0].get_state().position
         self.path_length += self.dist_euclidean_floor(abs_prev_position, self.abs_position)
         self.abs_rotation = quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation)
-        # curr_position = self.abs_position - self.abs_init_position
 
-        curr_rotation = self.abs_rotation - self.abs_init_rotation
-        # curr_rotation = quaternion.as_rotation_vector(curr_rotation) - self.abs_init_rotation
-        rot = R.from_rotvec(-self.abs_init_rotation)
-        curr_position_diff = rot.apply(self.abs_position - abs_prev_position)
-        curr_position = self.cur_position + curr_position_diff
+        for _ in range(5):
+            est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb,
+                                                                                      action, self.cur_rotation, prev_local_map, curr_local_map)
+                                                                                      # prev_local_map, curr_local_map)
+            if vo_success: break
+        curr_position = self.cur_position + est_pos_diff
+        curr_rotation = self.cur_rotation + est_rot_diff
         self.cur_position = curr_position
         self.cur_rotation = curr_rotation
-
-
 
 
         pano_obs = self.panoramic_obs(obs, semantic=True)
@@ -1679,8 +1711,7 @@ class Runner:
                                                              det['obj_min_pixel'])
             curr_state = self._sim.agents[0].get_state()
             vis_obs_goal_position = self.get_position_from_pixel(curr_state.position - self.abs_init_position,
-                                                                 quaternion.as_rotation_vector(curr_state.rotation),
-                                                                 obs['depth_sensor'],
+                                                                 quaternion.as_rotation_vector(curr_state.rotation), obs['depth_sensor'],
                                                                  det['obj_min_pixel'])
             new_goal_obj_det = True
             for cand_goal_idx in range(len(self.goal_obs_consistency['position'])):
@@ -1693,7 +1724,7 @@ class Runner:
                         self.goal_obs_consistency['count'][cand_goal_idx]
                     self.goal_obs_consistency['vis_position'][cand_goal_idx] = \
                         (self.goal_obs_consistency['vis_position'][cand_goal_idx] * (
-                                self.goal_obs_consistency['count'][cand_goal_idx] - 1) + vis_obs_goal_position) / \
+                                    self.goal_obs_consistency['count'][cand_goal_idx] - 1) + vis_obs_goal_position) / \
                         self.goal_obs_consistency['count'][cand_goal_idx]
                     new_goal_obj_det = False
                     break
@@ -1702,8 +1733,8 @@ class Runner:
                 self.goal_obs_consistency['vis_position'].append(vis_obs_goal_position)
                 self.goal_obs_consistency['count'].append(1)
 
+
         if self.vis_floorplan:
-            self.abs_position = self._sim.agents[0].get_state().position
             self.visited_positions.append(np.array(self.abs_position) - np.array(self.abs_init_position))
             vis_graph_map = self.vis_topdown_map_with_captions(self.graph_map,
                                                                curr_node=self.cur_node,
@@ -1713,10 +1744,14 @@ class Runner:
                                                                visited_positions=self.visited_positions)
             # vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
             # vis_local_map = np.zeros([241, 241, 3])
-            self.local_agent.reset_with_curr_pose(curr_position, curr_rotation)
-            delta_dist, delta_rot = get_relative_location(curr_position, curr_rotation, curr_position)
-            self.local_agent.update_gt_local_map(obs['depth_sensor'])
-            self.local_agent.set_goal(delta_dist, delta_rot)
+
+
+            # self.local_agent.reset_with_curr_pose(curr_position, curr_rotation)
+            # delta_dist, delta_rot = get_relative_location(curr_position, curr_rotation, curr_position)
+            # self.local_agent.update_gt_local_map(obs['depth_sensor'], agent_view=curr_agent_view)
+            self.local_agent.gt_new_sim_origin = get_sim_location(curr_position, quaternion.from_rotation_vector(curr_rotation))
+            self.local_agent.update_gt_local_map(obs['depth_sensor'], agent_view=curr_agent_view)
+            # self.local_agent.set_goal(delta_dist, delta_rot)
             vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
 
             self.vis_info['cur_position'] = curr_position
@@ -1742,9 +1777,9 @@ class Runner:
         if self.end_episode:
             return self.end_episode
 
-        # if not action == 'move_forward':
-        #     ### -- update current position -- ###
-        #     self.cur_position = np.array(cur_node.pos)
+        if not action == 'move_forward':
+            ### -- update current position -- ###
+            self.cur_position = np.array(cur_node.pos)
 
         self.end_episode = False
         if len(self.goal_obs_consistency['count']) > 0:
@@ -1756,13 +1791,18 @@ class Runner:
         return self.end_episode
 
     def do_panoramic_action(self, cur_node):
+        self.local_agent.reset_with_curr_pose(self.cur_position, self.cur_rotation)
+        obs = self._sim.get_sensor_observations()
+        delta_dist, delta_rot = get_relative_location(self.cur_position, self.cur_rotation, self.cur_position)
+        self.local_agent.update_gt_local_map(obs['depth_sensor'])
+        self.local_agent.set_goal(delta_dist, delta_rot)
+
         action = 'turn_left'
         for i in range(int(360/self.act_rot)):
             self.end_episode = self.do_explicit_action(cur_node, action)
             if self.end_episode:
                 break
         return
-
 
 
     def success_evaluation(self, last_position, data):
@@ -1807,7 +1847,7 @@ class Runner:
             self.abs_heading += 180
 
         # curr_position = self.abs_position - self.abs_init_position
-        # curr_rotation = self.abs_rotation - self.abs_init_rotation
+        # curr_rotation = self.abs_rotation #- self.abs_init_rotation
         # curr_heading = self.abs_heading - self.abs_init_heading
 
         curr_position = self.cur_position
@@ -1821,6 +1861,7 @@ class Runner:
         invalid_edge = False
         invalid_edge_node = []
 
+
         arrive_node = False
         find_frontier = False
         find_frontier_visited_node_id = []
@@ -1828,10 +1869,14 @@ class Runner:
         while True:
             if self.end_episode:
                 return
+
             if len(self.graph_map.candidate_node_ids) == 0 or find_frontier:
                 self.do_panoramic_action(self.cur_node)
+
             if invalid_edge:
                 # return to the previous node
+                # temp_goal_node = self.graph_map.get_node_by_id(self.cur_node.nodeid)
+                # temp_goal_position = self.cur_node.pos
                 cur_node_id, _ = self.graph_map.get_nearest_node(curr_position, except_node_id=invalid_edge_node)
                 temp_goal_node = self.graph_map.get_node_by_id(cur_node_id)
                 temp_goal_position = temp_goal_node.pos
@@ -1841,7 +1886,9 @@ class Runner:
                     if object_value < 0:
                         find_frontier_visited_node_id.append(self.cur_node.nodeid)
                         find_frontier = True
-                        subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node, include_visited=True, except_node_id=find_frontier_visited_node_id)
+                        subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node,
+                                                                                       include_visited=True,
+                                                                                       except_node_id=find_frontier_visited_node_id)
                     else:
                         find_frontier = False
                         find_frontier_visited_node_id = []
@@ -1850,32 +1897,9 @@ class Runner:
                     find_frontier = True
                     subgoal_node, object_value = self.get_next_subgoal_using_graph(self.cur_node, include_visited=True,
                                                                                    except_node_id=find_frontier_visited_node_id)
+
                 # if subgoal_node == None:
                 #     return
-
-                # ## check if the subgoal is reachable
-                # subgoal_position = subgoal_node.pos
-                # if np.linalg.norm(subgoal_position - curr_position) < self.graph_map.max_edge_length and \
-                #     self.graph_map.adj_mtx[int(self.cur_node.nodeid), int(subgoal_node.nodeid)] == 0:
-                #     rot_to_face = int(np.round(((math.degrees(math.atan2(subgoal_position[0] - curr_position[0],
-                #                                            -subgoal_position[2] + curr_position[2])) % 360) - (
-                #                               -math.degrees(curr_rotation[1]) % 360)))) // self.act_rot
-                #     if rot_to_face < -180/self.act_rot:
-                #         rot_to_face += int(360/self.act_rot)
-                #     elif rot_to_face > 180/self.act_rot:
-                #         rot_to_face -= int(360/self.act_rot)
-                #     for rot in range(abs(rot_to_face)):
-                #         if rot_to_face < 0:
-                #             action = 'turn_left'
-                #         else:
-                #             action = 'turn_right'
-                #         self.end_episode = self.do_explicit_action(self.cur_node, action, curr_goal_node=subgoal_node)
-                #         if self.end_episode:
-                #             # last mile navigation activated in explicit action
-                #             return
-                #
-                #     curr_position = self.cur_position
-                #     curr_rotation = self.cur_rotation
 
                 subgoal_id = subgoal_node.nodeid
 
@@ -1889,6 +1913,10 @@ class Runner:
                 temp_goal_node = self.graph_map.get_node_by_id(node_id)
                 temp_goal_position = temp_goal_node.pos
 
+
+
+
+
             obs = self._sim.get_sensor_observations()
             if len(self.goal_obs_consistency['count']) > 0:
                 if np.max(self.goal_obs_consistency['count']) >= self.goal_obs_consistency_th:
@@ -1900,6 +1928,7 @@ class Runner:
             delta_dist, delta_rot = get_relative_location(curr_position, curr_rotation, temp_goal_position)
             self.local_agent.update_gt_local_map(obs['depth_sensor'])
             self.local_agent.set_goal(delta_dist, delta_rot)
+            curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
 
             if self.vis_floorplan:
                 self.abs_position = self._sim.agents[0].get_state().position
@@ -1910,7 +1939,8 @@ class Runner:
                                                                    curr_position=np.array(self.abs_position) - np.array(self.abs_init_position),
                                                                    curr_goal_node=subgoal_node,
                                                                    visited_positions=self.visited_positions)
-                vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
+                # vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
+                                                                   # vis_goal_obj_score=self.goal_class_idx)
             local_action_cnt = 0
             terminate_local = False
             while self.dist_euclidean_floor(curr_position, temp_goal_position) >= self.follower_goal_radius:
@@ -1920,6 +1950,15 @@ class Runner:
                     break
                 action = self.local_agent.action_idx_map[action]
                 prev_position = self._sim.agents[0].get_state().position
+                prev_rotation = quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation)
+                prev_local_map = self.local_agent.gt_local_map
+
+
+                prev_obs = obs
+                prev_rgb = prev_obs['color_sensor'][:, :, :3]
+                prev_depth = prev_obs['depth_sensor']
+
+                torch.set_num_threads(1)
                 obs = self._sim.step(action)
                 self.path_length += self.dist_euclidean_floor(prev_position, self._sim.agents[0].get_state().position)
                 self.action_step += 1
@@ -1928,28 +1967,57 @@ class Runner:
                 if action == 'move_forward':
                     arrive_node = False
 
+                curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor']*100.)
 
-                curr_state = self._sim.agents[0].get_state()
-                curr_rotation = quaternion.as_rotation_vector(curr_state.rotation) - self.abs_init_rotation
-                rot = R.from_rotvec(-self.abs_init_rotation)
-                curr_position_diff = rot.apply(curr_state.position - prev_position)
-                curr_position = self.cur_position + curr_position_diff
+                # prev_map = torch.Tensor(prev_local_map).unsqueeze(0).unsqueeze(0)
+                # curr_map = torch.Tensor(curr_local_map).unsqueeze(0).unsqueeze(0)
+
+
+                # unit_vec = -np.array([np.sin(self.cur_rotation[1]), 0, np.cos(self.cur_rotation[1])])
+                # cand_pos = self.cur_position + unit_vec * self.step_size
+                # cand_pose_for_map = (cand_pos[0], cand_pos[2], self.cur_rotation[1])
+                # cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, (self.cur_position[0], self.cur_position[2], 0))
+                # cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
+                #
+                # prev_map = torch.Tensor(prev_local_map)
+                # prev_map = self.crop_and_pad(prev_map, 120, 100)
+                # plt.imsave('test_map.png', prev_local_map)
+                # plt.imsave('test_map0.png', prev_map)
+
+                # rot_filter = F.grid_sample(curr_map.repeat(self.localize_rot_num, 1, 1, 1), rot_grid)
+                # localize = F.conv2d(prev_map, rot_filter, padding=4)
+                # np.unravel_index(np.argmax(localize), localize.shape)
+                # self._sim.agents[0].get_state().position - prev_position, np.rad2deg(quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation) - prev_rotation)
+
+                # plt.imsave('test_map0.png', prev_local_map, origin='lower')
+                # plt.imsave('test_map1.png', curr_local_map, origin='lower')
+                # plt.imsave('test_map2.png', rot_filter[6, 0].numpy(), origin='lower')
+                
+
+
+                curr_rgb = obs['color_sensor'][:, :, :3]
+                for _ in range(5):
+                    est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb, action, self.cur_rotation, prev_local_map, curr_local_map)
+                    if vo_success: break
+                curr_position = self.cur_position + est_pos_diff
+                curr_rotation = self.cur_rotation + est_rot_diff
                 self.cur_position = curr_position
                 self.cur_rotation = curr_rotation
 
 
+
                 det, det_dist = self.check_close_goal_det(obs['color_sensor'], obs['depth_sensor'], vis=True)
 
-                pano_obs = self.panoramic_obs(obs, semantic=True)
+                pano_obs = self.panoramic_obs(obs, semantic=False)
                 self.pano_rgb_list.append(pano_obs['rgb_panoramic'])
                 # self.rgb_list.append(det['det_img'])
                 self.rgb_list.append(obs['color_sensor'])
                 self.depth_list.append(obs['depth_sensor'])
 
-
+                curr_state = self._sim.agents[0].get_state()
 
                 self.local_agent.gt_new_sim_origin = get_sim_location(curr_position, quaternion.from_rotation_vector(curr_rotation))
-                self.local_agent.update_gt_local_map(obs['depth_sensor'])
+                self.local_agent.update_gt_local_map(obs['depth_sensor'], agent_view=curr_agent_view)
 
                 if self.vis_floorplan:
                     self.vis_info['cur_position'] = curr_position
@@ -1967,10 +2035,8 @@ class Runner:
 
                 if det_dist < self.last_mile_range:
                     obs_goal_position = self.get_position_from_pixel(curr_position, curr_rotation, obs['depth_sensor'], det['obj_min_pixel'])
-                    vis_obs_goal_position = self.get_position_from_pixel(curr_state.position - self.abs_init_position,
-                                                                         quaternion.as_rotation_vector(
-                                                                             curr_state.rotation), obs['depth_sensor'],
-                                                                         det['obj_min_pixel'])
+                    vis_obs_goal_position = self.get_position_from_pixel(curr_state.position-self.abs_init_position,
+                                                                         quaternion.as_rotation_vector(curr_state.rotation), obs['depth_sensor'], det['obj_min_pixel'])
                     new_goal_obj_det = True
                     for cand_goal_idx in range(len(self.goal_obs_consistency['position'])):
                         if np.linalg.norm(self.goal_obs_consistency['position'][cand_goal_idx] - obs_goal_position) < 1.0 - self.step_size:
@@ -1979,16 +2045,14 @@ class Runner:
                             self.goal_obs_consistency['position'][cand_goal_idx] = \
                                 (self.goal_obs_consistency['position'][cand_goal_idx] * (self.goal_obs_consistency['count'][cand_goal_idx] - 1) + obs_goal_position) / self.goal_obs_consistency['count'][cand_goal_idx]
                             self.goal_obs_consistency['vis_position'][cand_goal_idx] = \
-                                (self.goal_obs_consistency['vis_position'][cand_goal_idx] * (
-                                            self.goal_obs_consistency['count'][
-                                                cand_goal_idx] - 1) + vis_obs_goal_position) / \
-                                self.goal_obs_consistency['count'][cand_goal_idx]
+                                (self.goal_obs_consistency['vis_position'][cand_goal_idx] * (self.goal_obs_consistency['count'][cand_goal_idx] - 1) + vis_obs_goal_position) / self.goal_obs_consistency['count'][cand_goal_idx]
                             new_goal_obj_det = False
                             break
                     if new_goal_obj_det:
                         self.goal_obs_consistency['position'].append(obs_goal_position)
                         self.goal_obs_consistency['vis_position'].append(vis_obs_goal_position)
                         self.goal_obs_consistency['count'].append(1)
+
 
                 if len(self.goal_obs_consistency['count']) > 0:
                     if np.max(self.goal_obs_consistency['count']) >= self.goal_obs_consistency_th:
@@ -2004,15 +2068,14 @@ class Runner:
 
 
                 # if arrive_node:
-                #     # ### --- cur_node_position --- ###
+                #     ### --- cur_node_position --- ###
                 #     # curr_position = np.array(self.cur_node.pos)
                 #     # self.cur_position = curr_position
                 #
-                #
                 #     cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1], self.depth_list[-1], curr_position,
                 #                                          curr_rotation, np.array(curr_state.position)-np.array(self.abs_init_position))
+                #     # temp_node_num = len(self.graph_map.nodes)
                 #     self.update_cand_node_to_graph(self.cur_node, cand_nodes)
-                #
                 #     # if temp_node_num < len(self.graph_map.nodes):
                 #     #     ## new cand node is added
                 #     #     break
@@ -2021,8 +2084,7 @@ class Runner:
                                                      curr_rotation,
                                                      np.array(curr_state.position) - np.array(self.abs_init_position))
                 cur_node_id, _ = self.graph_map.get_nearest_node(curr_position)
-                self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes) #, min_node_dist=self.edge_range)
-
+                self.update_cand_node_to_graph(self.graph_map.node_by_id[cur_node_id], cand_nodes)#, min_node_dist=self.edge_range)
 
 
                 self.local_agent.gt_new_sim_origin = get_sim_location(curr_position,
@@ -2041,16 +2103,12 @@ class Runner:
                                                                    visited_positions=self.visited_positions)
                     vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
 
-                self.check_pano_goal_det(pano_obs['rgb_panoramic'], self.cur_node, curr_position, curr_rotation, vis=True)
-
-                # curr_state = self._sim.agents[0].get_state()
-                # curr_position = curr_state.position - self.abs_init_position
-                # curr_rotation = quaternion.as_rotation_vector(curr_state.rotation)  # - self.abs_init_rotation
-                # self.cur_position, self.cur_rotation = curr_position, curr_rotation
-
-
+                self.check_pano_goal_det(pano_obs['rgb_panoramic'], self.cur_node, curr_position, curr_rotation,
+                                         vis=True)
+                # curr_position, curr_rotation = self.cur_position, self.cur_rotation
                 if self.end_episode:
                     return
+
 
                 if self.action_step > self.max_step:
                     max_action_step = True
@@ -2079,7 +2137,6 @@ class Runner:
 
                 print('invalid node')
                 self.graph_map.delete_invalid_node(temp_goal_node)
-
                 invalid_edge_node.append(temp_goal_node.nodeid)
                 continue
 
@@ -2094,33 +2151,23 @@ class Runner:
             invalid_edge_node = []
 
             # update current arrived node
-            # curr_state = self._sim.agents[0].get_state()
+            curr_state = self._sim.agents[0].get_state()
             # curr_position = curr_state.position - self.abs_init_position
             # curr_rotation = quaternion.as_rotation_vector(curr_state.rotation)
-            # self.cur_position, self.cur_rotation = curr_position, curr_rotation
-
-            # curr_state = self._sim.agents[0].get_state()
-            # curr_rotation = quaternion.as_rotation_vector(curr_state.rotation) - self.abs_init_rotation
-            # rot = R.from_rotvec(-self.abs_init_rotation)
-            # curr_position_diff = rot.apply(curr_state.position - prev_position)
-            # curr_position = self.cur_position + curr_position_diff
-            # self.cur_position = curr_position
-            # self.cur_rotation = curr_rotation
-
-            curr_state = self._sim.agents[0].get_state()
             curr_obs = self._sim.get_sensor_observations()
             curr_pano_obs = self.panoramic_obs(curr_obs)
             pano_images = self.get_dirc_imgs_from_pano(curr_pano_obs['rgb_panoramic'])
 
             self.check_cand_node_edge(self.cur_node, self.pano_rgb_list[-1], curr_position, curr_rotation)
 
+
             pano_image_feat = self.common_sense_model.clip.get_image_feat(pano_images)
             cur_heading_idx = int(np.round(-curr_rotation[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
             self.graph_map.update_node_goal_category(self.cur_node, self.goal_class_onehot)
             for i in range(len(pano_images)):
-                dirc_head_idx = (cur_heading_idx -4 + i) % self.rot_num
+                dirc_head_idx = (cur_heading_idx -5 + i) % self.rot_num
                 self.graph_map.update_node_clip_feat(self.cur_node, pano_image_feat[i], dirc_head_idx)
-
+                torch.set_num_threads(1)
                 if self.cm_type == 'comet':
                     goal_cm_scores, _ = self.common_sense_model.text_image_score(self.goal_place_text_feat,
                                                                                  pano_image_feat[i], feat=True,
@@ -2143,34 +2190,33 @@ class Runner:
                                                                :5]  ## weighted by room category
                     self.cur_node.update_goal_cm_scores(weighted_goal_cm_scores, dirc_head_idx)
 
+
+
             self.graph_map.update_node_vis_feat(self.cur_node)
 
-            # self.graph_map.update_node_cm_score(self.cur_node, cm_score[0] * self.goal_info['category_place_score'][arg_cm_score[0]])
             self.graph_map.update_node_visited(self.cur_node)
-            self.graph_map.update_node_feat(self.cur_node)
+            # self.graph_map.update_node_feat(self.cur_node)
+
+            ## -- update node pose?? -- ##
+            # self.graph_map.update_node_pos(self.cur_node, curr_position)
+            # if self.vis_floorplan:
+            #     self.cur_node.vis_pos = curr_state.position - self.abs_init_position
 
             curr_dist_to_objs, curr_is_valid = self.dist_to_objs(curr_state.position)
             self.graph_map.update_node_dist_to_objs(self.cur_node, curr_dist_to_objs)
             # self.graph_map.update_node_room(subgoal_node, self.check_position2room(subgoal_node.pos, self.room_info))
             # self.graph_map.update_node_cand_info(subgoal_node, cand_node_info)
 
-            cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1], self.depth_list[-1], curr_position, curr_rotation, vis_pos=np.array(curr_state.position)- np.array(self.abs_init_position))
+            cand_nodes = self.get_cand_node_dirc(self.pano_rgb_list[-1], self.depth_list[-1], curr_position, curr_rotation, np.array(curr_state.position)- np.array(self.abs_init_position))
             self.update_cand_node_to_graph(self.cur_node, cand_nodes)
 
-
-            # prev_position = curr_state.position
-            # # self.check_pano_goal_det(curr_pano_obs['rgb_panoramic'], self.cur_node, curr_position, curr_rotation, vis=True)
+            # self.check_pano_goal_det(curr_pano_obs['rgb_panoramic'], self.cur_node, curr_position, curr_rotation,
+            #                          vis=True)
+            # curr_position, curr_rotation = self.cur_position, self.cur_rotation
             #
-            #
-            #
-            # curr_state = self._sim.agents[0].get_state()
-            # curr_rotation = quaternion.as_rotation_vector(curr_state.rotation) - self.abs_init_rotation
-            # rot = R.from_rotvec(-self.abs_init_rotation)
-            # curr_position_diff = rot.apply(curr_state.position - prev_position)
-            # curr_position = self.cur_position + curr_position_diff
+            # ### -- update current position -- ###
+            # # curr_position = np.array(self.cur_node.pos)
             # self.cur_position = curr_position
-            # self.cur_rotation = curr_rotation
-
 
             if self.end_episode:
                 return
@@ -2179,12 +2225,6 @@ class Runner:
             if last_mile_navi_mode:
                 break
 
-            # obs = self._sim.get_sensor_observations()
-            # semantic = obs['semantic_sensor']
-
-            # det, det_dist = self.check_close_goal_det(obs['color_sensor'], obs['depth_sensor'])
-            # if det_dist < 0.75:
-            #     return
 
             if max_action_step:
                 break
@@ -2196,31 +2236,11 @@ class Runner:
         return
 
     def last_mile_navigation(self, last_mile_obs):
-        print('Last mile navigation')
-        # curr_state = self._sim.agents[0].get_state()
-        # curr_position = curr_state.position - self.abs_init_position
-        # curr_rotation = quaternion.as_rotation_vector(curr_state.rotation)  # - self.abs_init_rotation
-        # self.cur_position, self.cur_rotation = curr_position, curr_rotation
+        curr_state = self._sim.agents[0].get_state()
         curr_position = self.cur_position
         curr_rotation = self.cur_rotation
-
-
-        # last_mile_start_position = curr_state.position - self.abs_init_position
-        # last_mile_start_rotation = quaternion.as_rotation_vector(curr_state.rotation)  # - self.abs_init_rotation
         last_mile_start_position = self.cur_position
         last_mile_start_rotation = self.cur_rotation
-
-
-        # ## get target position
-        # closest_obj_id = last_mile_det['closest_obj_id']
-        # masked_depth = last_mile_det['masks'][closest_obj_id] * last_mile_obs['depth_sensor']
-        # nonzero_pixel = masked_depth[np.nonzero(masked_depth)]
-        # target_pixel = np.argwhere(masked_depth == np.sort(nonzero_pixel)[int(len(nonzero_pixel)/2)])[0]
-        # # target_pixel = np.argwhere(masked_depth == np.min(nonzero_pixel))[0]
-        #
-        # # target_pixel = [int(last_mile_det['boxes'][closest_obj_id][0] + last_mile_det['boxes'][closest_obj_id][2] / 2),
-        # #                 int(last_mile_det['boxes'][closest_obj_id][1] + last_mile_det['boxes'][closest_obj_id][3] / 2)]
-        # target_position = self.get_position_from_pixel(curr_position, curr_rotation, last_mile_obs['depth_sensor'], target_pixel)
 
         ## get target position from the consistency
         goal_obs_idx = np.argmax(self.goal_obs_consistency['count'])
@@ -2229,8 +2249,7 @@ class Runner:
 
         target_position = self.goal_obs_consistency['position'][np.argmax(self.goal_obs_consistency['count'])]
         self.object_goal_position = np.copy(target_position)
-        self.vis_object_goal_position = np.copy(
-            self.goal_obs_consistency['vis_position'][np.argmax(self.goal_obs_consistency['count'])])
+        self.vis_object_goal_position = np.copy(self.goal_obs_consistency['vis_position'][np.argmax(self.goal_obs_consistency['count'])])
 
         self.local_agent.reset_with_curr_pose(curr_position, curr_rotation)
         delta_dist, delta_rot = get_relative_location(curr_position, curr_rotation, target_position)
@@ -2248,6 +2267,7 @@ class Runner:
                                                                                 last_mile_start_position,
                                                                                 last_mile_start_rotation)
         if self.vis_floorplan:
+            self.abs_position = self._sim.agents[0].get_state().position
             self.visited_positions.append(np.array(self.abs_position) - np.array(self.abs_init_position))
             # vis_graph_map = self.vis_topdown_map_with_captions(self.graph_map,
             #                                                    curr_node=self.cur_node,
@@ -2256,53 +2276,70 @@ class Runner:
             #                                                    visited_positions=self.visited_positions)
             # vis_local_map = self.local_agent.get_observed_colored_map(gt=True)
 
+        obs = self._sim.get_sensor_observations()
+        curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
 
         while True:
             if self.dist_euclidean_floor(curr_position, target_position) < self.step_size or \
-                    self.dist_euclidean_floor(curr_position, self.object_goal_position) < 1.0 - (self.step_size/2 +0.05):
+                    self.dist_euclidean_floor(curr_position, self.object_goal_position) < 1.0 - (
+                    self.step_size / 2 + 0.05):
                 break
 
+            prev_obs = obs
+            prev_rgb = obs['color_sensor'][:, :, :3]
+            prev_depth = obs['depth_sensor']
+            prev_local_map = self.local_agent.gt_local_map
 
             action, terminate_local = self.local_agent.navigate_local(gt=True)
             action = self.local_agent.action_idx_map[action]
             prev_position = self._sim.agents[0].get_state().position
             obs = self._sim.step(action)
             self.path_length += self.dist_euclidean_floor(prev_position, self._sim.agents[0].get_state().position)
+            curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
+
+            curr_rgb = obs['color_sensor'][:, :, :3]
+            for _ in range(5):
+                est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth,
+                                                                                          curr_rgb, action,
+                                                                                          self.cur_rotation,
+                                                                                          prev_local_map, curr_local_map)
+                if vo_success: break
+            curr_position = self.cur_position + est_pos_diff
+            curr_rotation = self.cur_rotation + est_rot_diff
+            self.cur_position = curr_position
+            self.cur_rotation = curr_rotation
+
+
 
             det, det_dist = self.check_close_goal_det(obs['color_sensor'], obs['depth_sensor'], vis=True)
 
-            # self.rgb_list.append(det['det_img'])
             pano_obs = self.panoramic_obs(obs, semantic=False)
             self.pano_rgb_list.append(pano_obs['rgb_panoramic'])
             self.rgb_list.append(obs['color_sensor'])
             self.depth_list.append(obs['depth_sensor'])
 
-
             # if det_dist < self.goal_det_dist:
             #     return
 
+
             # curr_state = self._sim.agents[0].get_state()
-            # curr_position = curr_state.position - self.abs_init_position
-            # curr_rotation = quaternion.as_rotation_vector(curr_state.rotation)  # - self.abs_init_rotation
+            # curr_rotation = quaternion.as_rotation_vector(curr_state.rotation) - self.abs_init_rotation
+            # rot = R.from_rotvec(-self.abs_init_rotation)
+            # curr_position_diff = rot.apply(curr_state.position - prev_position)
+            # curr_position = self.cur_position + curr_position_diff
+            # self.cur_position = curr_position
+            # self.cur_rotation = curr_rotation
 
-            curr_state = self._sim.agents[0].get_state()
-            curr_rotation = quaternion.as_rotation_vector(curr_state.rotation) - self.abs_init_rotation
-            rot = R.from_rotvec(-self.abs_init_rotation)
-            curr_position_diff = rot.apply(curr_state.position - prev_position)
-            curr_position = self.cur_position + curr_position_diff
-            self.cur_position = curr_position
-            self.cur_rotation = curr_rotation
 
-            if obs['collided']or \
-                        (action == 'move_forward' and np.linalg.norm(prev_position - curr_state.position) < self.step_size * 0.3):
+            if obs['collided'] or \
+                    (action == 'move_forward' and np.linalg.norm(est_pos_diff) < self.step_size * 0.3):
                 self.local_agent.collision = True
             self.action_step += 1
             self.pbar.update(1)
 
-
             self.local_agent.gt_new_sim_origin = get_sim_location(curr_position,
                                                                   quaternion.from_rotation_vector(curr_rotation))
-            self.local_agent.update_gt_local_map(obs['depth_sensor'])
+            self.local_agent.update_gt_local_map(obs['depth_sensor'], agent_view=curr_agent_view)
 
             if self.vis_floorplan:
                 self.abs_position = self._sim.agents[0].get_state().position
@@ -2331,17 +2368,22 @@ class Runner:
             if det_dist < self.last_mile_range:
                 obs_goal_position = self.get_position_from_pixel(curr_position, curr_rotation, obs['depth_sensor'],
                                                                  det['obj_min_pixel'])
-                vis_obs_goal_position = self.get_position_from_pixel(
-                    np.array(self.abs_position) - np.array(self.abs_init_position),
-                    self.abs_rotation, obs['depth_sensor'],
-                    det['obj_min_pixel'])
+                vis_obs_goal_position = self.get_position_from_pixel(np.array(self.abs_position) - np.array(self.abs_init_position),
+                                                                     self.abs_rotation, obs['depth_sensor'],
+                                                                     det['obj_min_pixel'])
 
-                if np.linalg.norm(self.object_goal_position - obs_goal_position) < 1.0- self.step_size:
+                if np.linalg.norm(self.object_goal_position - obs_goal_position) < 1.0 - self.step_size:
                     goal_obs_count += 1
-                    self.object_goal_position = (self.object_goal_position * (goal_obs_count - 1) + obs_goal_position) / goal_obs_count
+                    self.object_goal_position = (self.object_goal_position * (
+                                goal_obs_count - 1) + obs_goal_position) / goal_obs_count
                     self.vis_object_goal_position = (self.vis_object_goal_position * (
                             goal_obs_count - 1) + vis_obs_goal_position) / goal_obs_count
-                    delta_dist, delta_rot = get_relative_location(curr_position, curr_rotation, self.object_goal_position)
+
+                    delta_dist, delta_rot = get_relative_location(curr_position, curr_rotation,
+                                                                  self.object_goal_position)
+
+
+
                     self.local_agent.set_goal(delta_dist, delta_rot)
                     object_goal_loc = np.copy(self.local_agent.goal)
 
@@ -2353,9 +2395,6 @@ class Runner:
                 target_position = self.local_mapper.get_sim_pose_from_mapper_coords(self.local_agent.goal,
                                                                                     last_mile_start_position,
                                                                                     last_mile_start_rotation)
-
-
-
 
         return
 
@@ -2459,8 +2498,6 @@ class Runner:
                 valid_traj_list.append(goal)
                 goal_traj_nums[self.goal_obj_names.index(goal['object_category'])] += 1
                 goal_category = goal['object_category']
-            else:
-                continue
 
 
         print("Get env information done")
@@ -2507,6 +2544,11 @@ class Runner:
             obj_success_results[obj_name] = {'success': 0, 'spl': 0, 'dts': 0, 'count': 0}
             obj_success_list[obj_name], obj_spl_list[obj_name], obj_dts_list[obj_name] = [], [], []
 
+
+
+
+
+
         trial = 0
         if self.data_type == 'train':
             interval = 10
@@ -2516,21 +2558,21 @@ class Runner:
         max_data_num = len(valid_traj_list) // interval
 
         ## -- floor plan -- ##
-        # if self.vis_floorplan:
-        self.calculate_navmesh()
-        self.update_cur_floor_map()
-        self.vis_obj_viewpoint_on_floormap()
+        if self.vis_floorplan:
+            self.calculate_navmesh()
+            self.update_cur_floor_map()
+            self.vis_obj_viewpoint_on_floormap()
 
-        ## save floor map image
-        floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
-        if not os.path.exists(floor_map_dir):
-            os.makedirs(floor_map_dir)
-        for lv in range(len(self.map)):
-            cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}.png', cv2.cvtColor(self.map[lv], cv2.COLOR_BGR2RGB))
-            for obj_name in self.goal_obj_names:
-                cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}_{obj_name}.png', cv2.cvtColor(self.goal_map[lv][obj_name],cv2.COLOR_BGR2RGB))
-        print("Save floor map done")
-
+        # ## save floor map image
+        # floor_map_dir = f"{self.args.save_dir}/{self.data_type}/{self.env_name}/floor_map"
+        # if not os.path.exists(floor_map_dir):
+        #     os.makedirs(floor_map_dir)
+        # for lv in range(len(self.map)):
+        #     cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}.png', cv2.cvtColor(self.map[lv], cv2.COLOR_BGR2RGB))
+        #     for obj_name in self.goal_obj_names:
+        #         cv2.imwrite(floor_map_dir + f'/floor_map_lv{lv}_{obj_name}.png',
+        #                     cv2.cvtColor(self.goal_map[lv][obj_name], cv2.COLOR_BGR2RGB))
+        # print("Save floor map done")
 
         ## -- load results -- ##
         if not os.path.exists(f'{self.args.save_dir}/{self.data_type}/results'):
@@ -2563,8 +2605,12 @@ class Runner:
             data_idx = results['total']['count']
             print(f"Load results done to data {data_idx}")
 
+        ## -- in data split -- ##
+        start_in_data_idx = int(self.args.in_data_split / self.args.in_data_split_max * len(valid_traj_list))
+        end_in_data_idx = int((self.args.in_data_split + 1) / self.args.in_data_split_max * len(valid_traj_list))
+        data_idx = start_in_data_idx
 
-        for traj in valid_traj_list[0:len(valid_traj_list):interval][data_idx:]:
+        for traj in valid_traj_list[0:len(valid_traj_list):interval][start_in_data_idx:end_in_data_idx]:
             data_idx += 1
             if data_idx > max_data_num:
                 break
@@ -2614,8 +2660,7 @@ class Runner:
 
             agent_id = self._sim_settings["default_agent"]
             agent = self._sim.initialize_agent(agent_id)
-            self.local_navi_module.reset_sim_and_agent(self._sim, agent)
-
+            # self.local_navi_module.reset_sim_and_agent(self._sim, agent)
 
             start_state = agent.get_state()
             start_state.position = traj['start_position']
@@ -2627,14 +2672,12 @@ class Runner:
             self.abs_init_position = start_state.position
             self.abs_init_rotation = quaternion.as_rotation_vector(start_state.rotation)
             self.abs_init_heading = -self.abs_init_rotation[1] * 180 / np.pi
-            self.abs_rot = R.from_rotvec(self.abs_init_rotation)
 
             self.abs_position = start_state.position
             self.abs_rotation = quaternion.as_rotation_vector(start_state.rotation)
             self.abs_heading = -self.abs_rotation[1] * 180 / np.pi
 
             self.cur_position = np.zeros([3])
-            # self.cur_rotation = quaternion.as_rotation_vector(start_state.rotation)
             self.cur_rotation = np.zeros([3])
             self.cur_heading = np.zeros([3])
 
@@ -2645,6 +2688,8 @@ class Runner:
             # self.base_map = self.map[self.curr_level].copy()
             self.base_map = self.goal_map[self.curr_level][traj['object_category']].copy()
             self.cur_graph_map = np.zeros_like(self.map[self.curr_level])
+
+
 
             self.end_episode = False
             self.object_goal_position = None
@@ -2662,6 +2707,8 @@ class Runner:
                 self.goal_info['category'] = traj['object_category']
                 # self.goal_info['goal_name'] = traj['object_category']
                 self.goal_class_idx = self.goal_obj_names.index(traj['object_category'])
+
+
 
             self.goal_class_onehot = torch.zeros([len(self.goal_obj_names)])
             self.goal_class_onehot[self.goal_class_idx] = 1
@@ -2695,6 +2742,8 @@ class Runner:
                 'env_bound': self._sim.pathfinder.get_bounds()
             }
 
+            # dist_to_objs, is_valid_point = self.dist_to_objs(start_state.position)
+
             if self.vis_floorplan:
                 self.vis_traj = []
                 self.vis_info = {
@@ -2715,8 +2764,9 @@ class Runner:
 
             # set initial node
             self.cur_node, _ = self.graph_map.add_single_node(self.cur_position)
+            # if self.vis_floorplan:
             self.cur_node.vis_pos = np.array(self.abs_position) - np.array(self.abs_init_position)
-            # cur_node = self.graph_map.get_node_by_pos(self.cur_position)
+
 
             # similarity, pano_clip_feat = self.common_sense_model.clip.get_text_image_sim(self.goal_info['category'], pano_images, out_img_feat=True)
             # self.graph_map.update_node_clip_feat(self.cur_node, pano_clip_feat[0])
@@ -2730,7 +2780,7 @@ class Runner:
             cur_heading_idx = int(np.round(-self.cur_rotation[1] * 180 / np.pi / self.cand_rot_angle)) % self.rot_num
 
             for i in range(len(pano_images)):
-                dirc_head_idx = (cur_heading_idx - 4 + i) % self.rot_num
+                dirc_head_idx = (cur_heading_idx - 5 + i) % self.rot_num
                 self.graph_map.update_node_clip_feat(self.cur_node, pano_images_feat[i], dirc_head_idx)
 
                 if self.cm_type == 'comet':
@@ -2753,6 +2803,9 @@ class Runner:
                     self.cur_node.update_goal_cm_scores(weighted_goal_cm_scores, dirc_head_idx)
 
             self.graph_map.update_node_vis_feat(self.cur_node)
+
+
+
 
             curr_dist_to_objs, curr_is_valid_point = self.dist_to_objs(self.abs_position)
             if not curr_is_valid_point:
@@ -2792,7 +2845,6 @@ class Runner:
 
             # self.do_panoramic_action(self.cur_node)
             # self.do_time_steps(data_idx)
-
             try:
 
 
@@ -2906,19 +2958,19 @@ class Runner:
 
                 epi_name = f'{self.env_name}_{data_idx:04d}_{self.goal_obj_names[self.goal_class_idx]}_{path_level}'
 
-                self.save_video(self.vis_traj, f'{self.args.save_dir}/{self.data_type}/vis_results/{success_fail}/videos/{self.env_name}', epi_name)
+                self.save_video(self.vis_traj,
+                                f'{self.args.save_dir}/{self.data_type}/vis_results/{success_fail}/videos/{self.env_name}',
+                                epi_name)
                 vis_save_dir = [save_dir + '/result.png']
-                vis_save_dir.append(
-                    f'{self.args.save_dir}/{self.data_type}/vis_results/{success_fail}/all_images/{epi_name}.png')
+                vis_save_dir.append(f'{self.args.save_dir}/{self.data_type}/vis_results/{success_fail}/all_images/{epi_name}.png')
                 if not os.path.exists(f'{self.args.save_dir}/{self.data_type}/vis_results/{success_fail}/all_images'):
                     os.makedirs(f'{self.args.save_dir}/{self.data_type}/vis_results/{success_fail}/all_images')
                 # vis_save_dir = f'{self.args.save_dir}/{self.data_type}/{self.env_name}/{success_fail}/{self.env_name}_{data_idx:04d}/result.png'
                 self.save_viewpoint_on_topdown_map(save_dir=vis_save_dir,
                                                    bias_position=self.abs_init_position,
                                                    curr_position=agent.get_state().position - self.abs_init_position,
-                                                   curr_goal_position=self.vis_object_goal_position,
+                                                  curr_goal_position=self.vis_object_goal_position,
                                                    result=result)
-
 
 
             with open(
@@ -2928,7 +2980,7 @@ class Runner:
             self.pbar.close()
 
             print(
-                f"[{env_idx}/{tot_env_num}] {self.env_name} - [{data_idx}/{len(valid_traj_list)}], Step: {self.action_step},   Time : {time.time() - src_start_time} \n"
+                f"[{env_idx}/{tot_env_num}] {self.env_name} - [{data_idx}/{len(valid_traj_list)}], Step: {self.action_step},  Time : {time.time() - src_start_time} \n"
                 f"         Total - success: {np.mean(total_success)}, spl: {np.mean(total_spl)}, dts: {np.mean(total_dts)}, count: {len(total_success)} \n"
                 f"         Easy - success: {np.mean(easy_success)}, spl: {np.mean(easy_spl)}, dts: {np.mean(easy_dts)}, count: {len(easy_success)} \n"
                 f"         Medium - success: {np.mean(medium_success)}, spl: {np.mean(medium_spl)}, dts: {np.mean(medium_dts)}, count: {len(medium_success)} \n"
@@ -2963,7 +3015,6 @@ class Runner:
                     obj_count = len(obj_success_list[obj_name])
                     obj_success_results[obj_name] = {'success': obj_success, 'spl': obj_spl, 'dts': obj_dts,
                                                      'count': obj_count}
-
 
             with open(f'{self.args.save_dir}/{self.data_type}/results/{self.env_name}_result.json', 'wb') as f:
                 success_results.update(obj_success_results)
@@ -3013,3 +3064,4 @@ class Runner:
 
 
         return success_results, obj_success_results
+

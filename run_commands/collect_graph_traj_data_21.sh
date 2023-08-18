@@ -2,7 +2,7 @@
 
 cd ../
 
-python navigation/data_collect_21.py --gpu_list '1' --run_type 'val' --data_split_max 1 &
+#python navigation/data_collect_21.py --gpu_list '1' --run_type 'val' --data_split_max 1 &
 python navigation/data_collect_21.py --gpu_list '1' --run_type 'train' --data_split 0 &
 python navigation/data_collect_21.py --gpu_list '1' --run_type 'train' --data_split 1 &
 python navigation/data_collect_21.py --gpu_list '1' --run_type 'train' --data_split 2 &

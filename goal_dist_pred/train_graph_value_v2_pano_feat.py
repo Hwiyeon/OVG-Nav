@@ -11,39 +11,40 @@ parser = argparse.ArgumentParser("Pytorch code for unsupervised video summarizat
 
 parser.add_argument('--vis_feat_dim', default=512, type=int)
 parser.add_argument('--hidden_size', default=512, type=int)
-parser.add_argument('--gcn_layers', default=5, type=int)
+parser.add_argument('--gcn_layers', default=10, type=int)
+parser.add_argument("--cm_type", type=str, default="comet")
 # parser.add_argument('--goal_type_num', default=6, type=int)
 parser.add_argument('--max_dist', default=30., type=float)
-parser.add_argument('--use_cm_score', default=True, type=bool)
+parser.add_argument('--use_cm_score', default=False, type=bool)
 parser.add_argument('--goal_cat', type=str, default='mp3d_21')
 parser.add_argument('--value_loss_cf', default=1.0, type=float)
-parser.add_argument('--adj_loss_cf', default=10.0, type=float)
+parser.add_argument('--adj_loss_cf', default=100.0, type=float)
 parser.add_argument('--adj_sim_loss_cf', default=0.0, type=float)
-parser.add_argument('--sign_loss_cf', default=0.01, type=float)
+parser.add_argument('--sign_loss_cf', default=0.0, type=float)
 
 # Optimization options
 parser.add_argument('--batch-size', type=int, default=512, help="learning rate (default: 1e-05)")
 parser.add_argument('--lr', type=float, default=0.001, help="learning rate (default: 1e-05)")
 parser.add_argument('--momentum', type=float, default=0.9)
 parser.add_argument('--weight_decay', type=float, default=1e-4)
-parser.add_argument('--max-epoch', type=int, default=3, help="maximum epoch for training (default: 60)")
+parser.add_argument('--max-epoch', type=int, default=6, help="maximum epoch for training (default: 60)")
 parser.add_argument('--stepsize', type=int, default=30, help="how many steps to decay learning rate (default: 30)")
 parser.add_argument('--gamma', type=float, default=0.1, help="learning rate decay (default: 0.1)")
 parser.add_argument('--beta', type=float, default=0.01, help="weight for summary length penalty term (default: 0.01)")
 
 # Misc
 parser.add_argument('--seed', type=int, default=100, help="random seed (default: 1)")
-parser.add_argument('--gpu', type=str, default='9', help="which gpu devices to use")
+parser.add_argument('--gpu', type=str, default='8', help="which gpu devices to use")
 parser.add_argument('--resume', type=str, default='', help="path to resume file")
 parser.add_argument('--save-results', action='store_true', help="whether to save  output results")
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0630/relative_pose_step_by_step_pano', type=str)
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect', type=str)
-parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0803/21cat_relative_pose_step_by_step_pano_connect_edge1_v1.1', type=str)
+parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0806/21cat_relative_pose_step_by_step_pano_connect_edge1_v1.2', type=str)
 # parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/0729/21cat_relative_pose_step_by_step_pano_connect_edge1_v2', type=str)
 # parser.add_argument('--data-dir_aug', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cmv2', type=str)
 parser.add_argument('--data-dir_aug', default=[
-                                                '/disk4/hwing/Dataset/cm_graph/mp3d/0806/21cat_relative_pose_step_by_step_pano_connect_edge1_v1.2',
-                                                # '/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect'
+                                                '/disk4/hwing/Dataset/cm_graph/mp3d/0803/21cat_relative_pose_step_by_step_pano_connect_edge1_v1.1',
+                                                '/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect',
                                               # '/disk4/hwing/Dataset/cm_graph/mp3d/0729/21cat_relative_pose_step_by_step_pano_connect_edge1_v2',
                                                # '/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cm',
                                                # '/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm',
@@ -52,7 +53,7 @@ parser.add_argument('--data-dir_aug', default=[
 # parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1v1.12_panov7_2_1_layer{}_hidden{}_epoch_3_goalscore_w_adjmtx_valueloss{}_adjloss{}_adjsimlos{}_signloss{}_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/GAT_{}_mp3d21_edge1v1.012_panov8_layer{}_hidden{}_epochv0_6_goalscore_w_adjmtx_valueloss{}_adjloss{}_adjsimlos{}_signloss{}_{}_{}_maxdist{}_lr{}', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_edge1v1.12_0810', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
@@ -66,7 +67,8 @@ args = parser.parse_args()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-from model_value_graph_0607 import TopoGCN_v7_2_1_pano_goalscore as Model
+from model_value_graph_0607 import TopoGCN_v8_pano_goalscore as Model
+# from model_value_graph_0607 import TopoGAT_v9_pano_goalscore as Model
 
 import torch
 import torch.nn as nn
@@ -85,7 +87,7 @@ import cv2
 from tqdm import tqdm
 
 from dataloader_batch_graph_data_0607 import Batch_traj_DataLoader_pano_goalscore as Batch_traj_DataLoader
-# from dataloader_batch_graph_data_0607 import Batch_traj_DataLoader_rank as Batch_traj_DataLoader
+# from dataloader_batch_graph_data_0607 import Batch_traj_DataLoader_pano_goalscore_nopos as Batch_traj_DataLoader
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from utils.obj_category_info import assign_room_category, obj_names_det, mp3d_goal_obj_names, room_names, obj_names, gibson_goal_obj_names
@@ -95,9 +97,9 @@ cur_date = str(datetime.now().date())
 cur_time = str(datetime.now().time())[:5].replace(":", "-")
 
 if args.use_cm_score:
-    args.log_dir = args.log_dir.format(cur_date, cur_time, args.gcn_layers, args.hidden_size, args.value_loss_cf, args.adj_loss_cf, args.adj_sim_loss_cf, args.sign_loss_cf, 'use_cm', args.max_dist, args.lr)
+    args.log_dir = args.log_dir.format(cur_date, cur_time, args.gcn_layers, args.hidden_size, args.value_loss_cf, args.adj_loss_cf, args.adj_sim_loss_cf, args.sign_loss_cf, 'use_cm', args.cm_type, args.max_dist, args.lr)
 else:
-    args.log_dir = args.log_dir.format(cur_date, cur_time, args.gcn_layers, args.hidden_size, args.value_loss_cf, args.adj_loss_cf, args.adj_sim_loss_cf, args.sign_loss_cf, 'no_cm', args.max_dist, args.lr)
+    args.log_dir = args.log_dir.format(cur_date, cur_time, args.gcn_layers, args.hidden_size, args.value_loss_cf, args.adj_loss_cf, args.adj_sim_loss_cf, args.sign_loss_cf, 'no_cm', args.cm_type, args.max_dist, args.lr)
 
 print(args)
 torch.manual_seed(args.seed)
@@ -128,11 +130,11 @@ def main():
         for data_aug in args.data_dir_aug:
             train_envs_aug = [os.path.join(data_aug, 'train', name) for name in
                             os.listdir(os.path.join(data_aug, 'train'))]
-            val_envs_aug = [os.path.join(data_aug, 'val', name) for name in os.listdir(os.path.join(data_aug, 'val'))]
+            # val_envs_aug = [os.path.join(data_aug, 'val', name) for name in os.listdir(os.path.join(data_aug, 'val'))]
             train_envs_aug.sort()
-            val_envs_aug.sort()
+            # val_envs_aug.sort()
             train_envs = train_envs + train_envs_aug
-            val_envs = val_envs + val_envs_aug
+            # val_envs = val_envs + val_envs_aug
 
 
 
@@ -193,8 +195,8 @@ def main():
             'goal_idx': goal_idx
         }
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, collate_fn=make_collate_batch, shuffle=True, num_workers=8)
-    valid_loader = DataLoader(dataset=val_dataset, batch_size=1, collate_fn=make_collate_batch, num_workers=8)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, collate_fn=make_collate_batch, shuffle=True, num_workers=4)
+    valid_loader = DataLoader(dataset=val_dataset, batch_size=1, collate_fn=make_collate_batch, num_workers=4)
 
 
 
@@ -266,14 +268,27 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     # lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.96)
     def lambda_rule(epoch):
-        if epoch < int(args.max_epoch /4) * train_batch_num:
+        if epoch < int(args.max_epoch /2) * train_batch_num:
             return 1.0
-        elif epoch < int(args.max_epoch * 2 / 4) * train_batch_num:
-            return 0.1
-        elif epoch < int(args.max_epoch * 3 / 4) * train_batch_num:
-            return 0.01
+        # elif epoch < int(args.max_epoch * 2 / 4) * train_batch_num:
         else:
-            return 0.001
+            return 0.1
+        # elif epoch < int(args.max_epoch * 3 / 4) * train_batch_num:
+        #     return 0.01
+        # else:
+        #     return 0.001
+
+    def lambda_rule2(epoch):
+        if epoch < int(args.max_epoch /3) * train_batch_num:
+            return 1.0
+        elif epoch < int(args.max_epoch * 2 / 3) * train_batch_num:
+            return 0.1
+        else:
+            return 0.01
+        # elif epoch < int(args.max_epoch * 3 / 4) * train_batch_num:
+        #     return 0.01
+        # else:
+        #     return 0.001
 
     def coeff_rule(epoch, coeff, multiplier=1):
         if epoch < int(args.max_epoch /3):
@@ -283,9 +298,10 @@ def main():
         else:
             return coeff * multiplier * multiplier
 
-    # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
+    # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule2)
     # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.999 ** epoch)
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: (0.1**(1/(train_batch_num*int(args.max_epoch/3)))) ** epoch)
+    # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: (0.1**(1/(train_batch_num*int(args.max_epoch/3)))) ** epoch)
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: (0.1 ** (1 / (train_batch_num * int(args.max_epoch * 1/ 3)))) ** epoch)
 
     mse = nn.MSELoss()
     bce = nn.BCEWithLogitsLoss()

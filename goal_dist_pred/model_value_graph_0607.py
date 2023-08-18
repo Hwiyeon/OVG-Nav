@@ -124,53 +124,77 @@ class SpecialSpmm(nn.Module):
         return SpecialSpmmFunction.apply(indices, values, shape, b)
 
 
-class SpGraphAttentionLayer(nn.Module):
+class GraphAttention(nn.Module):
     """
     Sparse version GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
-    def __init__(self, in_features, out_features, edge_features=None, dropout=0.5, concat=True):
-        super(SpGraphAttentionLayer, self).__init__()
+    def __init__(self, in_features, out_features, dropout=0.1, alpha=0.1, concat=True, init="xavier"):
+        super(GraphAttention, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.edge_features = edge_features
-        # self.alpha = alpha
+        self.alpha = alpha
         self.concat = concat
+
+        # self.A = nn.Parameter(torch.zeros(size=(in_features, in_features)))
 
         self.W = nn.Parameter(torch.zeros(size=(in_features, out_features)))
         nn.init.xavier_normal_(self.W.data, gain=1.414)
 
-        if edge_features is None:
-            self.a = nn.Parameter(torch.zeros(size=(1, 2 * out_features)))
-            nn.init.xavier_normal_(self.a.data, gain=1.414)
-        else:
-            self.a = nn.Parameter(torch.zeros(size=(1, 2 * out_features + edge_features)))
-            nn.init.xavier_normal_(self.a.data, gain=1.414)
+        self.a = nn.Parameter(torch.zeros(size=(1, 2 * out_features)))
+        nn.init.xavier_normal_(self.a.data, gain=1.414)
 
         self.dropout = nn.Dropout(dropout)
-        self.leakyrelu = nn.LeakyReLU()
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
         self.special_spmm = SpecialSpmm()
+        if init == 'uniform':
+            #print("| Uniform Initialization")
+            self.reset_parameters_uniform()
+        elif init == 'xavier':
+            #print("| Xavier Initialization")
+            self.reset_parameters_xavier()
+        elif init == 'kaiming':
+            #print("| Kaiming Initialization")
+            self.reset_parameters_kaiming()
+        else:
+            raise NotImplementedError
 
-    def forward(self, input, adj, edge_feat=None):
-        dv = 'cuda' if input.is_cuda else 'cpu'
+    def reset_parameters_uniform(self):
+        stdv = 1. / math.sqrt(self.W.size(1))
+        self.W.data.uniform_(-stdv, stdv)
+        if self.a is not None:
+            self.a.data.uniform_(-stdv, stdv)
+
+    def reset_parameters_xavier(self):
+        nn.init.xavier_normal_(self.W.data, gain=0.02) # Implement Xavier Uniform
+        if self.a is not None:
+            nn.init.constant_(self.a.data, 0.0)
+
+    def reset_parameters_kaiming(self):
+        nn.init.kaiming_normal_(self.W.data, a=0, mode='fan_in')
+        if self.a is not None:
+            nn.init.constant_(self.a.data, 0.0)
+
+    def forward(self, input, adj, score=None):
+        # dv = 'cuda' if input.is_cuda else 'cpu'
+        dv = input.device
 
         N = input.size()[0]
-        edge = adj.nonzero().t()
-
+        edge = torch.nonzero(adj).t()
+        # if score!=None:
+        #     input = input + self.leakyrelu(torch.mm(input * score[:, None], self.A))
         h = torch.mm(input, self.W)
         # h: N x out
         assert not torch.isnan(h).any()
 
         # Self-attention on the nodes - Shared attention mechanism
-        if self.edge_features is None:
-            edge_h = torch.cat((h[edge[0, :], :], h[edge[1, :], :]), dim=1).t()
-            # edge: 2*D x E
-        else:
-            assert edge_feat is not None
-            edge_h = torch.cat((h[edge[0, :], :], h[edge[1, :], :], edge_feat[edge[0,:],edge[1,:]]), dim=1).t()
-            # edge: (2*D + edge_features) x E
+        edge_h = torch.cat((h[edge[0, :], :], h[edge[1, :], :]), dim=1).t()
+        # edge: 2*D x E
 
         edge_e = torch.exp(-self.leakyrelu(self.a.mm(edge_h).squeeze()))
+        if score!=None:
+            score_mtx = (score[:,None] * score[None])**0.5
+            edge_e = edge_e * score_mtx[edge[0,:], edge[1,:]]
         assert not torch.isnan(edge_e).any()
         # edge_e: E
 
@@ -184,7 +208,7 @@ class SpGraphAttentionLayer(nn.Module):
         assert not torch.isnan(h_prime).any()
         # h_prime: N x out
 
-        h_prime = h_prime.div(e_rowsum)
+        h_prime = h_prime.div(e_rowsum + 0.00001)
         # h_prime: N x out
         assert not torch.isnan(h_prime).any()
 
@@ -193,10 +217,11 @@ class SpGraphAttentionLayer(nn.Module):
             return F.elu(h_prime)
         else:
             # if this layer is last layer,
-            return h_prime
+            return h_prime, edge_e
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
+
 
 
 class TopoGCN(nn.Module):
@@ -1888,8 +1913,12 @@ class TopoGCN_v8_pano_goalscore(nn.Module):
         super(TopoGCN_v8_pano_goalscore, self).__init__()
         self.args = args
         self.info_dim = 1 + 3 + args.vis_feat_dim  # visited, position, goal text feat dim
+        if args.cm_type == 'comet':
+            self.cm_num = 10
+        elif args.cm_type == 'mp3d':
+            self.cm_num = 5
         if args.use_cm_score:
-            self.info_dim += 12 * 10  # cm_score
+            self.info_dim += 12 * self.cm_num  # cm_score
         self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
 
         self.gcn_layer_num = args.gcn_layers
@@ -1965,7 +1994,6 @@ class TopoGCN_v8_pano_goalscore(nn.Module):
         pred_dist = self.sigmoid(self.value_layer(feat_x))
 
         return pred_dist
-
 
 class TopoGCN_v8_1_pano_goalscore(nn.Module):
     def __init__(self, args, hidden_size=512):
@@ -2144,6 +2172,302 @@ class TopoGCN_v8_3_pano_goalscore(nn.Module):
 
         feat_list.append(goal_feat)
         feat_list.append(info_feat)
+
+        feat_x = torch.cat(feat_list, dim=-1)
+        pred_dist = self.sigmoid(self.value_layer(feat_x))
+
+        return pred_dist
+
+
+class TopoGAT_v8_pano_goalscore(nn.Module):
+    def __init__(self, args, hidden_size=512):
+        super(TopoGAT_v8_pano_goalscore, self).__init__()
+        self.args = args
+        self.info_dim = 1 + 3 + args.vis_feat_dim  # visited, position, goal text feat dim
+        if args.cm_type == 'comet':
+            self.cm_num = 10
+        elif args.cm_type == 'mp3d':
+            self.cm_num = 5
+        if args.use_cm_score:
+            self.info_dim += 12 * self.cm_num  # cm_score
+        self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
+
+        self.gcn_layer_num = args.gcn_layers
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.5)
+        self.sigmoid = nn.Sigmoid()
+        self.batchnorm = nn.BatchNorm1d(hidden_size)
+
+        self.feat_enc = nn.Sequential(
+            nn.Linear(12 * args.vis_feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+
+
+        self.node_feat_enc0 = nn.Sequential(
+            nn.Linear(hidden_size + self.info_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+        self.graph_attentions = nn.ModuleList()
+        self.node_feat_enc = nn.ModuleList()
+        for i in range(self.gcn_layer_num):
+            self.graph_attentions.append(GraphAttention(hidden_size, hidden_size))
+            self.node_feat_enc.append(nn.Sequential(
+                nn.Linear(hidden_size + self.info_dim, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+            ))
+
+        self.value_layer = nn.Sequential(
+            nn.Linear(hidden_size * (self.gcn_layer_num + 1) + self.info_dim, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 4),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 4, 1),
+            # nn.Sigmoid()
+        )
+
+    def forward(self, feat, goal_feat, info_feat, adj):
+        feat_x = self.feat_enc(feat)
+
+        feat_list = []
+        feat_list.append(self.node_feat_enc0(torch.cat([feat_x, goal_feat, info_feat], dim=-1)))
+        for i in range(self.gcn_layer_num):
+            feat_x = self.batchnorm(self.relu(self.graph_attentions[i](feat_x, adj))) + feat_x
+            feat_list.append(self.node_feat_enc[i](torch.cat([feat_x, goal_feat, info_feat], dim=-1)))
+
+        feat_list.append(goal_feat)
+        feat_list.append(info_feat)
+
+        feat_x = torch.cat(feat_list, dim=-1)
+        pred_dist = self.sigmoid(self.value_layer(feat_x))
+
+        return pred_dist
+
+
+class TopoGAT_v8_1_pano_goalscore(nn.Module):
+    def __init__(self, args, hidden_size=512):
+        super(TopoGAT_v8_1_pano_goalscore, self).__init__()
+        self.args = args
+        self.info_dim = 1 + 3 + args.vis_feat_dim  # visited, position, goal text feat dim
+        if args.use_cm_score:
+            self.info_dim += 12 * 10  # cm_score
+        self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
+
+        self.gcn_layer_num = args.gcn_layers
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.5)
+        self.sigmoid = nn.Sigmoid()
+        self.batchnorm = nn.BatchNorm1d(hidden_size)
+
+        self.feat_enc = nn.Sequential(
+            nn.Linear(12 * args.vis_feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+
+
+        self.graph_convs = nn.ModuleList()
+        self.node_feat_enc = nn.ModuleList()
+        for i in range(self.gcn_layer_num):
+            self.graph_convs.append(GraphAttention(hidden_size, hidden_size))
+
+
+        self.value_layer = nn.Sequential(
+            nn.Linear(hidden_size + self.info_dim, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 4),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 4, 1),
+            # nn.Sigmoid()
+        )
+
+    def forward(self, feat, goal_feat, info_feat, adj):
+        feat_x = self.feat_enc(feat)
+
+
+        for i in range(self.gcn_layer_num):
+            feat_x = self.batchnorm(self.relu(self.graph_convs[i](feat_x, adj))) + feat_x
+
+        feat_x = torch.cat([feat_x, goal_feat, info_feat], dim=-1)
+        pred_dist = self.sigmoid(self.value_layer(feat_x))
+
+        return pred_dist
+
+class TopoGAT_v9_pano_goalscore(nn.Module):
+    def __init__(self, args, hidden_size=512):
+        super(TopoGAT_v9_pano_goalscore, self).__init__()
+        self.args = args
+        self.info_dim = 1 + args.vis_feat_dim  # visited, goal text feat dim
+        if args.use_cm_score:
+            self.info_dim += 12 * 10  # cm_score
+        self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
+
+        self.gcn_layer_num = args.gcn_layers
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.5)
+        self.sigmoid = nn.Sigmoid()
+        self.batchnorm = nn.BatchNorm1d(hidden_size)
+
+        self.feat_enc = nn.Sequential(
+            nn.Linear(12 * args.vis_feat_dim + self.info_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+
+
+        self.graph_convs = nn.ModuleList()
+        self.node_feat_enc = nn.ModuleList()
+        for i in range(self.gcn_layer_num):
+            self.graph_convs.append(GraphAttention(hidden_size, hidden_size))
+            self.node_feat_enc.append(nn.Sequential(
+                nn.Linear(hidden_size + self.info_dim, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+            ))
+
+
+        self.value_layer = nn.Sequential(
+            nn.Linear(hidden_size * (self.gcn_layer_num + 1), hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            # nn.Linear(hidden_size * 2, hidden_size * 4),
+            # nn.ReLU(),
+            # nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, 1),
+            # nn.Sigmoid()
+        )
+
+    def forward(self, feat, goal_feat, info_feat, adj):
+
+        # info_feat = torch.cat([info_feat[:, :1], info_feat[:, 4:]], dim=-1) ## remove position info
+        feat_x = self.feat_enc(torch.cat([feat, goal_feat, info_feat], dim=-1))
+
+        feat_list = []
+        feat_list.append(feat_x)
+        for i in range(self.gcn_layer_num):
+            feat_x = self.batchnorm(self.relu(self.graph_convs[i](feat_x, adj))) + feat_x
+            feat_x = self.node_feat_enc[i](torch.cat([feat_x, goal_feat, info_feat], dim=-1))
+            feat_list.append(feat_x)
+
+        feat_x = torch.cat(feat_list, dim=-1)
+        pred_dist = self.sigmoid(self.value_layer(feat_x))
+
+        return pred_dist
+
+class TopoGAT_v9_1_pano_goalscore(nn.Module):
+    def __init__(self, args, hidden_size=512):
+        super(TopoGAT_v9_1_pano_goalscore, self).__init__()
+        self.args = args
+        self.info_dim = 1 + args.vis_feat_dim  # visited, goal text feat dim
+        if args.use_cm_score:
+            self.info_dim += 12 * 10  # cm_score
+        self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
+
+        self.gcn_layer_num = args.gcn_layers
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.5)
+        self.sigmoid = nn.Sigmoid()
+        self.batchnorm = nn.BatchNorm1d(hidden_size)
+
+        self.feat_enc = nn.Sequential(
+            nn.Linear(12 * args.vis_feat_dim + self.info_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+
+
+        self.graph_convs = nn.ModuleList()
+        self.node_feat_enc = nn.ModuleList()
+        for i in range(self.gcn_layer_num):
+            self.graph_convs.append(GraphAttention(hidden_size, hidden_size))
+            self.node_feat_enc.append(nn.Sequential(
+                nn.Linear(hidden_size + self.info_dim, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+            ))
+
+
+        self.value_layer = nn.Sequential(
+            nn.Linear(hidden_size * (self.gcn_layer_num + 1), hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 4),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 4, 1),
+            # nn.Sigmoid()
+        )
+
+    def forward(self, feat, goal_feat, info_feat, adj):
+
+        # info_feat = torch.cat([info_feat[:, :1], info_feat[:, 4:]], dim=-1) ## remove position info
+        feat_x = self.feat_enc(torch.cat([feat, goal_feat, info_feat], dim=-1))
+
+        feat_list = []
+        feat_list.append(feat_x)
+        for i in range(self.gcn_layer_num):
+            feat_x = self.batchnorm(self.relu(self.graph_convs[i](feat_x, adj))) + feat_x
+            feat_list.append(self.node_feat_enc[i](torch.cat([feat_x, goal_feat, info_feat], dim=-1)))
 
         feat_x = torch.cat(feat_list, dim=-1)
         pred_dist = self.sigmoid(self.value_layer(feat_x))
