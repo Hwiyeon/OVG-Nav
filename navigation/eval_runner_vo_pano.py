@@ -23,6 +23,8 @@ from navigation.configs.settings_pano_navi import make_cfg
 # from habitat_sim.utils.common import d3_40_colors_rgb
 # from detector.detector_mask import Detector
 import quaternion
+from scipy import ndimage
+
 from scipy.spatial.transform import Rotation as R
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import shortest_path
@@ -44,6 +46,8 @@ from habitat_sim.utils.common import (
 _barrier = None
 
 import matplotlib.pyplot as plt
+import matplotlib
+# matplotlib.use('Agg')
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.patches as patches
 import time
@@ -62,6 +66,7 @@ from modules.free_space_model.inference import FreeSpaceModel
 from modules.comet_relation.inference import CommonSenseModel
 from modules.visual_odometry.keypoint_matching import KeypointMatching
 from goal_dist_pred.model_value_graph_0607 import TopoGCN_v8_pano_goalscore as ValueModel
+# from goal_dist_pred.model_value_graph_0607 import TopoGAT_v8_pano_goalscore as ValueModel
 
 from navigation.local_navigation import LocalNavigation
 
@@ -209,9 +214,9 @@ class Runner:
 
         self.rot_grid = {'move_forward': [], 'turn_left': [], 'turn_right': []}
         rot_angle = 5 * np.pi / 180.
-        self.localize_rot_num = 7
+        self.localize_rot_num = int((self.act_rot / 5 * (2/3))*2+1)
         self.rot_grid_headings = {'move_forward': [], 'turn_left': [], 'turn_right': []}
-        for i in range(-3, 4):
+        for i in range(-int(self.localize_rot_num/2), int(self.localize_rot_num/2)+1):
             angle_0 = rot_angle * i
             self.rot_grid['move_forward'].append(torch.FloatTensor(
                 [[np.cos(angle_0), -np.sin(angle_0), 0],
@@ -321,7 +326,8 @@ class Runner:
 
 
         ## text
-        text1 = "Target object goal: {}   Mode: {}".format(info['target_goal'], info['mode'])
+        # text1 = "Target object goal: {}   Mode: {}".format(info['target_goal'], info['mode'])
+        text1 = "Target object goal: {}   Mode: {}  vo mode: {} {}".format(info['target_goal'], info['mode'], info['vo_type'], info['vo_est'])
         text2 = "Step: {}   Position: {}".format(info['step'], info['cur_position'])
         font_color = (255, 255, 255)
         text_size, _ = cv2.getTextSize(text1, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
@@ -336,6 +342,12 @@ class Runner:
         # canvas = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
         frame2 = cv2.putText(canvas, text1, text_position1, cv2.FONT_HERSHEY_SIMPLEX, 0.4, font_color, 1, cv2.LINE_AA)
         frame2 = cv2.putText(canvas, text2, text_position2, cv2.FONT_HERSHEY_SIMPLEX, 0.4, font_color, 1, cv2.LINE_AA)
+
+        if self.args.debug_frame:
+            if not os.path.exists(f'{self.args.save_dir}/{self.data_type}/vis_results/frames/{self.env_name}'):
+                os.makedirs(f'{self.args.save_dir}/{self.data_type}/vis_results/frames/{self.env_name}')
+            plt.imsave(f'{self.args.save_dir}/{self.data_type}/vis_results/frames/{self.env_name}/{info["step"]}.png', frame2)
+
 
         return frame2
 
@@ -854,11 +866,16 @@ class Runner:
 
 
     def get_vo_relative_camera_pose0(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, initial_guess=None):
-        if initial_guess is None:
+        action_guess = self.vo_model.get_extrinsic_guess_from_action(action)
+        # if initial_guess is None:
+        for i in range(5):
             initial_guess = self.vo_model.get_extrinsic_guess_from_action(action)
-        torch.set_num_threads(1)
-        est_pos_diff, est_rot_diff, keypoint_est_success = self.vo_model.get_relative_camera_pose(
-                                                            prev_rgb, prev_depth, curr_rgb, initial_guess, rot_vec=True)
+            torch.set_num_threads(1)
+            est_pos_diff, est_rot_diff, keypoint_est_success = self.vo_model.get_relative_camera_pose(
+                                                                    prev_rgb, prev_depth, curr_rgb, initial_guess, rot_vec=True,
+                                                                    action_guess=action_guess)
+            if keypoint_est_success:
+                break
 
         # ## -- transform to habitat coordinate -- ##
         # est_pos_diff[2] = -est_pos_diff[2]
@@ -871,58 +888,103 @@ class Runner:
 
         return est_pos_diff, est_rot_diff, keypoint_est_success
 
-    def get_vo_relative_camera_pose(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, prev_local_map, curr_local_map, initial_guess=None):
-        # if initial_guess is None:
-        #     initial_guess = self.vo_model.get_extrinsic_guess_from_action(action)
+    def get_vo_relative_camera_pose(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, prev_local_map, curr_local_map, use_matching=False, oracle=None):
+        action_guess = self.vo_model.get_extrinsic_guess_from_action(action)
+        for i in range(8):
+        # use_matching = True
+        # if not use_matching:
+            if i < 5:
+                initial_guess = action_guess
+                self.vis_info['vo_type'] = 'keypoint'
+                self.vis_info['vo_est'] = None
+            elif i == 5:
+                self.vis_info['vo_type'] = 'matching'
+                # prev_local_map = ndimage.rotate(prev_local_map, np.rad2deg(cur_rotation[1]), reshape=False)
+                # curr_local_map = ndimage.rotate(curr_local_map, np.rad2deg(cur_rotation[1]), reshape=False)
+
+                curr_map = torch.Tensor(curr_local_map).unsqueeze(0).unsqueeze(0)
+                if action == 'move_forward':
+                    # unit_vec = -np.array([np.sin(cur_rotation[1]), 0, np.cos(cur_rotation[1])])
+                    # cand_pos = self.cur_position + unit_vec * self.step_size
+                    # cand_pose_for_map = (cand_pos[0], cand_pos[2], cur_rotation[1])
+                    # cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, (
+                    #                             self.cur_position[0], self.cur_position[2], 0))
+                    # cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
+                    cand_pose_on_grid_map = [int(self.local_map_size/2), int(self.local_map_size/2)+5]
+                    prev_map = self.crop_and_pad(torch.Tensor(prev_local_map), cand_pose_on_grid_map[0], cand_pose_on_grid_map[1])
+                    prev_map = prev_map.unsqueeze(0).unsqueeze(0)
+                else:
+                    prev_map = torch.Tensor(prev_local_map).unsqueeze(0).unsqueeze(0)
+
+                # prev_map = torch.Tensor(prev_local_map).unsqueeze(0).unsqueeze(0)
+                padding = 3
+                # if action == 'move_forward':
+                #     padding = 8
+                # else:
+                #     padding = 3
+
+                # prev_map = torch.Tensor(prev_local_map).unsqueeze(0).unsqueeze(0)
 
 
-        curr_map = torch.Tensor(curr_local_map).unsqueeze(0).unsqueeze(0)
-        if action == 'move_forward':
-            unit_vec = -np.array([np.sin(cur_rotation[1]), 0, np.cos(cur_rotation[1])])
-            cand_pos = self.cur_position + unit_vec * self.step_size
-            cand_pose_for_map = (cand_pos[0], cand_pos[2], cur_rotation[1])
-            cand_pose_on_grid_map_cm = self.local_mapper.get_mapper_pose_from_sim_pose(cand_pose_for_map, (
-                                        self.cur_position[0], self.cur_position[2], 0))
-            cand_pose_on_grid_map = self.local_mapper.get_map_grid_from_sim_pose_cm(cand_pose_on_grid_map_cm)
-            prev_map = self.crop_and_pad(torch.Tensor(prev_local_map), cand_pose_on_grid_map[0], cand_pose_on_grid_map[1])
-            prev_map = prev_map.unsqueeze(0).unsqueeze(0)
-        else:
-            prev_map = torch.Tensor(prev_local_map).unsqueeze(0).unsqueeze(0)
+                rot_filter = F.grid_sample(curr_map.repeat(self.localize_rot_num, 1, 1, 1), self.rot_grid[action])
+                localize = F.conv2d(prev_map, rot_filter, padding=padding)
+                cand_map_idx = np.unravel_index(np.argmax(localize), localize.shape)
 
+                if torch.max(localize) == 0:
+                    initial_guess = action_guess
+                else:
+                    rot_guess = np.array([0, self.rot_grid_headings[action][cand_map_idx[1]], 0]).astype(np.float32)
 
-        rot_filter = F.grid_sample(curr_map.repeat(self.localize_rot_num, 1, 1, 1), self.rot_grid[action])
-        localize = F.conv2d(prev_map, rot_filter, padding=3)
-        cand_map_idx = np.unravel_index(np.argmax(localize), localize.shape)
+                    # if action == 'move_forward':
+                    #     cand_map_pos_idx = (cand_pose_on_grid_map[0] + cand_map_idx[2] - padding, cand_pose_on_grid_map[1] + cand_map_idx[3] - padding)
+                    # else:
+                    #     cand_map_pos_idx = (int(self.local_map_size/2) + cand_map_idx[2] - padding, int(self.local_map_size/2) + cand_map_idx[3] - padding)
+                    cand_map_pos_idx = (int(self.local_map_size / 2) + cand_map_idx[2] - padding, int(self.local_map_size / 2) + cand_map_idx[3] - padding)
 
-        if torch.max(localize) == 0:
-            initial_guess = self.vo_model.get_extrinsic_guess_from_action(action)
-        else:
-            rot_guess = np.array([0, self.rot_grid_headings[action][cand_map_idx[1]], 0]).astype(np.float32)
+                    pos_guess = self.local_mapper.get_sim_pose_from_mapper_coords(cand_map_pos_idx, (0,0,0), -rot_guess)
+                    if action == 'move_forward':
+                        pos_guess = pos_guess + np.array([0, 0, -self.step_size])
 
-            if action == 'move_forward':
-                cand_map_pos_idx = (cand_pose_on_grid_map[1] + cand_map_idx[3] - 4, cand_pose_on_grid_map[0] + cand_map_idx[2] - 4)
-            else:
-                cand_map_pos_idx = (int(self.local_map_size/2) + cand_map_idx[3] - 4, int(self.local_map_size/2) + cand_map_idx[2] - 4)
-            pos_guess = self.local_mapper.get_sim_pose_from_mapper_coords(cand_map_pos_idx, (0,0,0), rot_guess)
+                    # rot = R.from_rotvec(-rot_guess)
+                    # rot.as_matrix()
+                    # pos_guess = rot.apply(pos_guess)
 
-            initial_guess = {
-                'tvec': pos_guess,
-                'rvec': rot_guess
-            }
+                    initial_guess = {
+                        'rvec': rot_guess,
+                        'tvec': pos_guess,
+                    }
 
-        torch.set_num_threads(1)
-        est_pos_diff, est_rot_diff, keypoint_est_success = self.vo_model.get_relative_camera_pose(
-                                                            prev_rgb, prev_depth, curr_rgb, initial_guess, rot_vec=True)
+                    if oracle is not None:
+                        oracle_rot = oracle
 
-        # ## -- transform to habitat coordinate -- ##
-        # est_pos_diff[2] = -est_pos_diff[2]
-        # est_pos_diff[1] = -est_pos_diff[1]
+                self.vis_info['vo_est'] = cand_map_idx
+
+                # print('use matching : ', cand_map_idx)
+
+            torch.set_num_threads(1)
+            est_pos_diff, est_rot_diff, keypoint_est_success = self.vo_model.get_relative_camera_pose(
+                                                                prev_rgb, prev_depth, curr_rgb, initial_guess, rot_vec=True,
+                                                                action_guess=action_guess)
+
+            # ## -- transform to habitat coordinate -- ##
+            # est_pos_diff[2] = -est_pos_diff[2]
+            # est_pos_diff[1] = -est_pos_diff[1]
+
+            # plt.imsave('prev_map.png', prev_local_map, origin='lower')
+            # plt.imsave('curr_map.png', curr_local_map, origin='lower')
+
+            if keypoint_est_success:
+                break
 
         rot = R.from_rotvec(cur_rotation)
         rot.as_matrix()
         est_pos_diff = rot.apply(est_pos_diff)
 
-
+        # if i >= 5:
+        #     print('Step: ', self.action_step, '  use matching : ', cand_map_idx, '  rot : ', rot_guess, '  pos : ', pos_guess)
+        #     print('       est_pos_diff : ', est_pos_diff, '  est_rot_diff : ', est_rot_diff)
+        # else:
+        #     print('Step: ', self.action_step, '  est_pos_diff : ', est_pos_diff, '  est_rot_diff : ', est_rot_diff)
         return est_pos_diff, est_rot_diff, keypoint_est_success
 
 
@@ -1675,24 +1737,32 @@ class Runner:
         prev_rgb = prev_obs['color_sensor'][:,:,:3]
         prev_depth = prev_obs['depth_sensor']
         # prev_local_map = self.local_agent.get_observed_colored_map(gt=True)
-        # prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
-        prev_local_map = self.local_agent.gt_local_map
+        prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
+        prev_position = self._sim.agents[0].get_state().position
+        prev_rotation = quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation)
+        # prev_local_map = self.local_agent.gt_local_map
 
         obs = self._sim.step(action)
 
         curr_rgb = obs['color_sensor'][:,:,:3]
+        curr_agent_view = None
         curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
-        # curr_local_map = self.local_agent.get_observed_colored_map(gt=True)
 
         self.abs_position = self._sim.agents[0].get_state().position
         self.path_length += self.dist_euclidean_floor(abs_prev_position, self.abs_position)
         self.abs_rotation = quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation)
 
-        for _ in range(5):
-            est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb,
-                                                                                      action, self.cur_rotation, prev_local_map, curr_local_map)
-                                                                                      # prev_local_map, curr_local_map)
-            if vo_success: break
+        # use_matching = False
+        # for _ in range(5):
+        # est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose0(prev_rgb, prev_depth, curr_rgb,
+        #                                                                           action, self.cur_rotation)
+
+        est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb,
+                                                                                  action, self.cur_rotation, prev_local_map, curr_local_map)
+        # if vo_success:
+        #     break
+        # else:
+        #     use_matching = True
         curr_position = self.cur_position + est_pos_diff
         curr_rotation = self.cur_rotation + est_rot_diff
         self.cur_position = curr_position
@@ -1951,12 +2021,14 @@ class Runner:
                 action = self.local_agent.action_idx_map[action]
                 prev_position = self._sim.agents[0].get_state().position
                 prev_rotation = quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation)
-                prev_local_map = self.local_agent.gt_local_map
+                # prev_local_map = self.local_agent.gt_local_map
+
 
 
                 prev_obs = obs
                 prev_rgb = prev_obs['color_sensor'][:, :, :3]
                 prev_depth = prev_obs['depth_sensor']
+                prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
 
                 torch.set_num_threads(1)
                 obs = self._sim.step(action)
@@ -1967,6 +2039,7 @@ class Runner:
                 if action == 'move_forward':
                     arrive_node = False
 
+                curr_agent_view = None
                 curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor']*100.)
 
                 # prev_map = torch.Tensor(prev_local_map).unsqueeze(0).unsqueeze(0)
@@ -1996,9 +2069,19 @@ class Runner:
 
 
                 curr_rgb = obs['color_sensor'][:, :, :3]
-                for _ in range(5):
-                    est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb, action, self.cur_rotation, prev_local_map, curr_local_map)
-                    if vo_success: break
+                # use_matching = False
+                # for _ in range(5):
+                # est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose0(prev_rgb, prev_depth,
+                #                                                                           curr_rgb, action,
+                #                                                                           self.cur_rotation)
+
+                est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb, action, self.cur_rotation, prev_local_map, curr_local_map,
+                                                                                          oracle=[self._sim.agents[0].get_state().position - prev_position, np.rad2deg(quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation) - prev_rotation)])
+
+                # if vo_success:
+                #     break
+                # else:
+                #     use_matching = True
                 curr_position = self.cur_position + est_pos_diff
                 curr_rotation = self.cur_rotation + est_rot_diff
                 self.cur_position = curr_position
@@ -2288,22 +2371,31 @@ class Runner:
             prev_obs = obs
             prev_rgb = obs['color_sensor'][:, :, :3]
             prev_depth = obs['depth_sensor']
-            prev_local_map = self.local_agent.gt_local_map
+            # prev_local_map = self.local_agent.gt_local_map
+            prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
 
             action, terminate_local = self.local_agent.navigate_local(gt=True)
             action = self.local_agent.action_idx_map[action]
             prev_position = self._sim.agents[0].get_state().position
             obs = self._sim.step(action)
             self.path_length += self.dist_euclidean_floor(prev_position, self._sim.agents[0].get_state().position)
+            curr_agent_view = None
             curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
 
             curr_rgb = obs['color_sensor'][:, :, :3]
-            for _ in range(5):
-                est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth,
-                                                                                          curr_rgb, action,
-                                                                                          self.cur_rotation,
-                                                                                          prev_local_map, curr_local_map)
-                if vo_success: break
+            # use_matching=False
+            # for _ in range(5):
+            # est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose0(prev_rgb, prev_depth,
+            #                                                                           curr_rgb, action,
+            #                                                                           self.cur_rotation)
+
+            est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth,
+                                                                                      curr_rgb, action,
+                                                                                      self.cur_rotation,
+                                                                                      prev_local_map, curr_local_map)
+
+            # if vo_success: break
+            # else: use_matching = True
             curr_position = self.cur_position + est_pos_diff
             curr_rotation = self.cur_rotation + est_rot_diff
             self.cur_position = curr_position
@@ -2607,10 +2699,11 @@ class Runner:
 
         ## -- in data split -- ##
         start_in_data_idx = int(self.args.in_data_split / self.args.in_data_split_max * len(valid_traj_list))
-        end_in_data_idx = int((self.args.in_data_split + 1) / self.args.in_data_split_max * len(valid_traj_list))
+        end_in_data_idx = int((self.args.in_data_split + 1) / self.args.in_data_split_max * len(valid_traj_list)) + 1
         data_idx = start_in_data_idx
 
-        for traj in valid_traj_list[0:len(valid_traj_list):interval][start_in_data_idx:end_in_data_idx]:
+        # for traj in valid_traj_list[0:len(valid_traj_list):interval][start_in_data_idx:end_in_data_idx]:
+        for traj in valid_traj_list[0:len(valid_traj_list):interval][17:18]:
             data_idx += 1
             if data_idx > max_data_num:
                 break
@@ -2752,6 +2845,8 @@ class Runner:
                     'cur_position': self.cur_position,
                     'obj_position': None,
                     'step': 0,
+                    'vo_type': 'keypoint',
+                    'vo_est': None,
                 }
 
 

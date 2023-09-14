@@ -44,7 +44,7 @@ parser.add_argument('--data-dir', default='/disk4/hwing/Dataset/cm_graph/mp3d/08
 # parser.add_argument('--data-dir_aug', default='/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cmv2', type=str)
 parser.add_argument('--data-dir_aug', default=[
                                                 '/disk4/hwing/Dataset/cm_graph/mp3d/0803/21cat_relative_pose_step_by_step_pano_connect_edge1_v1.1',
-                                                '/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect',
+                                                # '/disk4/hwing/Dataset/cm_graph/mp3d/0715/21cat_relative_pose_step_by_step_pano_connect',
                                               # '/disk4/hwing/Dataset/cm_graph/mp3d/0729/21cat_relative_pose_step_by_step_pano_connect_edge1_v2',
                                                # '/data1/hwing/Dataset/cm_graph/mp3d/0607/random_path_collection_3interval_pure_cm',
                                                # '/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm',
@@ -53,7 +53,7 @@ parser.add_argument('--data-dir_aug', default=[
 # parser.add_argument('--data-dir_aug', default=None, type=str)
 # parser.add_argument('--data-dir_aug2', default='/home/hwing/Dataset/cm_graph/mp3d/0607/shortest_path_crop_collection_3interval_pure_cm_aug2', type=str)
 # parser.add_argument('--data-dir_aug2', default=None, type=str)
-parser.add_argument('--log_dir', default='logs/cm_{}/GAT_{}_mp3d21_edge1v1.012_panov8_layer{}_hidden{}_epochv0_6_goalscore_w_adjmtx_valueloss{}_adjloss{}_adjsimlos{}_signloss{}_{}_{}_maxdist{}_lr{}', type=str)
+parser.add_argument('--log_dir', default='logs/cm_{}/{}_mp3d21_edge1v1.12v_panov10_1_layer{}_hidden{}_epochv0_6_goalscore_w_adjmtx_valueloss{}_adjloss{}_adjsimlos{}_signloss{}_{}_{}_maxdist{}_lr{}', type=str)
 parser.add_argument('--proj_name', default='object_value_graph_estimation_mp3d21_pano_running_addnode_edge1v1.12_0810', type=str)
 parser.add_argument('--disp_iter', type=int, default=10, help="random seed (default: 1)")
 parser.add_argument('--save_iter', type=int, default=3, help="random seed (default: 1)")
@@ -67,8 +67,8 @@ args = parser.parse_args()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-from model_value_graph_0607 import TopoGCN_v8_pano_goalscore as Model
-# from model_value_graph_0607 import TopoGAT_v9_pano_goalscore as Model
+# from model_value_graph_0607 import TopoGCN_v8_pano_goalscore as Model
+from model_value_graph_0607 import TopoGCN_v10_1_pano_goalscore as Model
 
 import torch
 import torch.nn as nn
@@ -127,14 +127,15 @@ def main():
     val_envs.sort()
 
     if args.data_dir_aug is not None:
-        for data_aug in args.data_dir_aug:
+        for i, data_aug in enumerate(args.data_dir_aug):
             train_envs_aug = [os.path.join(data_aug, 'train', name) for name in
                             os.listdir(os.path.join(data_aug, 'train'))]
-            # val_envs_aug = [os.path.join(data_aug, 'val', name) for name in os.listdir(os.path.join(data_aug, 'val'))]
             train_envs_aug.sort()
-            # val_envs_aug.sort()
             train_envs = train_envs + train_envs_aug
-            # val_envs = val_envs + val_envs_aug
+            if i == 0:
+                val_envs_aug = [os.path.join(data_aug, 'val', name) for name in os.listdir(os.path.join(data_aug, 'val'))]
+                val_envs_aug.sort()
+                val_envs = val_envs + val_envs_aug
 
 
 
@@ -195,8 +196,8 @@ def main():
             'goal_idx': goal_idx
         }
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, collate_fn=make_collate_batch, shuffle=True, num_workers=4)
-    valid_loader = DataLoader(dataset=val_dataset, batch_size=1, collate_fn=make_collate_batch, num_workers=4)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, collate_fn=make_collate_batch, shuffle=True, num_workers=16)
+    valid_loader = DataLoader(dataset=val_dataset, batch_size=1, collate_fn=make_collate_batch, num_workers=16)
 
 
 
@@ -959,3 +960,4 @@ if __name__ == '__main__':
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-21/02-12_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_100.0_use_cm_maxdist30.0_lr0.0001/model_10.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/logs/cm_2023-07-20/20-35_mp3d21_panov2_goalscore_wadjmtx_valueloss_1.0_adjlossv2_100.0_use_cm_maxdist30.0_lr0.01/model_10.pth')
     # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/models/03-03_mp3d21_edge1_datav2_aug2_panov4_2_layer5_hidden512_goalscore_w_adjmtx_valueloss1.0_adjloss100.0_hoploss_visited100.0_signloss0.001_use_cm_maxdist30.0_lr0.0001/model_9.pth')
+    # eval('/home/hwing/Projects/OVG-Nav/goal_dist_pred/models/GAT_11-01_mp3d21_edge1v1.012_panov8_layer10_hidden512_epochv0_6_goalscore_w_adjmtx_valueloss1.0_adjloss100.0_adjsimlos0.0_signloss0.0_use_cm_comet_maxdist30.0_lr0.001/model.pth')

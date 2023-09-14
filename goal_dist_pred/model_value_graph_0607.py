@@ -2473,3 +2473,290 @@ class TopoGAT_v9_1_pano_goalscore(nn.Module):
         pred_dist = self.sigmoid(self.value_layer(feat_x))
 
         return pred_dist
+
+
+
+class TopoGCN_v10_pano_goalscore(nn.Module):
+    def __init__(self, args, hidden_size=512):
+        super(TopoGCN_v10_pano_goalscore, self).__init__()
+        self.args = args
+        self.info_dim = 1 + 3 + args.vis_feat_dim  # visited, position, goal text feat dim
+        if args.cm_type == 'comet':
+            self.cm_num = 10
+        elif args.cm_type == 'mp3d':
+            self.cm_num = 5
+        if args.use_cm_score:
+            self.info_dim += 12 * self.cm_num  # cm_score
+        self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
+
+        self.gcn_layer_num = args.gcn_layers
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.5)
+        self.sigmoid = nn.Sigmoid()
+        self.batchnorm = nn.BatchNorm1d(hidden_size)
+
+        self.vis_feat_enc = nn.Sequential(
+            nn.Linear(12 * args.vis_feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+        self.visit_enc = nn.Sequential(
+            nn.Linear(1, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size)
+        )
+        self.pos_enc = nn.Sequential(
+            nn.Linear(3, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size)
+        )
+        self.goal_enc = nn.Sequential(
+            nn.Linear(args.vis_feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size)
+        )
+
+        if args.use_cm_score:
+            self.cm_enc = nn.Sequential(
+                nn.Linear(12 * self.cm_num, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size)
+            )
+
+        input_feat_dim = hidden_size * 4
+        if args.use_cm_score:
+            input_feat_dim += hidden_size
+        self.feat_enc = nn.Sequential(
+            nn.Linear(input_feat_dim, hidden_size*2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+
+        self.node_feat_enc0 = nn.Sequential(
+            nn.Linear(hidden_size + self.info_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+        self.graph_convs = nn.ModuleList()
+        self.node_feat_enc = nn.ModuleList()
+        for i in range(self.gcn_layer_num):
+            self.graph_convs.append(GraphConv(hidden_size, hidden_size))
+            self.node_feat_enc.append(nn.Sequential(
+                nn.Linear(hidden_size + hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+            ))
+
+        self.value_layer = nn.Sequential(
+            nn.Linear(hidden_size * (self.gcn_layer_num + 1), hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 4),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 4, 1),
+            # nn.Sigmoid()
+        )
+
+    def forward(self, feat, goal_feat, info_feat, adj):
+        feat_x = self.vis_feat_enc(feat)
+        goal_feat_x = self.goal_enc(goal_feat)
+        visit_feat_x = self.visit_enc(info_feat[:, 0:1])
+        pos_feat_x = self.pos_enc(info_feat[:, 1:4])
+
+        if self.args.use_cm_score:
+            cm_feat_x = self.cm_enc(info_feat[:, 4:])
+            info_feat = torch.cat([goal_feat_x, visit_feat_x, pos_feat_x, cm_feat_x], dim=-1)
+
+        else:
+            info_feat = torch.cat([goal_feat_x, visit_feat_x, pos_feat_x], dim=-1)
+
+        feat_list = []
+        feat_x = self.feat_enc(torch.cat([feat_x, info_feat], dim=-1))
+        feat_list.append(feat_x)
+        for i in range(self.gcn_layer_num):
+            feat_x = self.batchnorm(self.relu(self.graph_convs[i](feat_x, adj))) + feat_x
+            feat_x = self.feat_enc(torch.cat([feat_x, info_feat], dim=-1))
+            feat_list.append(feat_x)
+
+
+        feat_x = torch.cat(feat_list, dim=-1)
+        pred_dist = self.sigmoid(self.value_layer(feat_x))
+
+        return pred_dist
+
+
+class TopoGCN_v10_1_pano_goalscore(nn.Module):
+    def __init__(self, args, hidden_size=512):
+        super(TopoGCN_v10_1_pano_goalscore, self).__init__()
+        self.args = args
+        self.info_dim = 1 + 3 + args.vis_feat_dim  # visited, position, goal text feat dim
+        if args.cm_type == 'comet':
+            self.cm_num = 10
+        elif args.cm_type == 'mp3d':
+            self.cm_num = 5
+        if args.use_cm_score:
+            self.info_dim += 12 * self.cm_num  # cm_score
+        self.feat_dim = 12 * args.vis_feat_dim + self.info_dim
+
+        self.gcn_layer_num = args.gcn_layers
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.5)
+        self.sigmoid = nn.Sigmoid()
+        self.batchnorm = nn.BatchNorm1d(hidden_size)
+
+        self.vis_feat_enc = nn.Sequential(
+            nn.Linear(12 * args.vis_feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+        self.visit_enc = nn.Sequential(
+            nn.Linear(1, 32),
+            nn.ReLU(),
+            nn.BatchNorm1d(32),
+            nn.Linear(32, 32),
+            nn.ReLU(),
+            nn.BatchNorm1d(32),
+            nn.Linear(32, 32)
+        )
+        self.pos_enc = nn.Sequential(
+            nn.Linear(3, 64),
+            nn.ReLU(),
+            nn.BatchNorm1d(64),
+            nn.Linear(64, 64),
+            nn.ReLU(),
+            nn.BatchNorm1d(64),
+            nn.Linear(64, 64)
+        )
+        self.goal_enc = nn.Sequential(
+            nn.Linear(args.vis_feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size)
+        )
+
+        if args.use_cm_score:
+            self.cm_enc = nn.Sequential(
+                nn.Linear(12 * self.cm_num, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size)
+            )
+
+        input_feat_dim = hidden_size + 32 + 64 + hidden_size
+        if args.use_cm_score:
+            input_feat_dim += hidden_size
+        self.feat_enc0 = nn.Sequential(
+            nn.Linear(input_feat_dim, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+        self.graph_convs = nn.ModuleList()
+        self.node_feat_enc = nn.ModuleList()
+        for i in range(self.gcn_layer_num):
+            self.graph_convs.append(GraphConv(hidden_size, hidden_size))
+            self.node_feat_enc.append(nn.Sequential(
+                nn.Linear(input_feat_dim, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Linear(hidden_size, hidden_size),
+            ))
+
+        self.value_layer = nn.Sequential(
+            nn.Linear(hidden_size * (self.gcn_layer_num + 1) + (input_feat_dim - hidden_size), hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 2),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 2, hidden_size * 4),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(hidden_size * 4, 1),
+            # nn.Sigmoid()
+        )
+
+    def forward(self, feat, goal_feat, info_feat, adj):
+        feat_x = self.vis_feat_enc(feat)
+        goal_feat_x = self.goal_enc(goal_feat)
+        visit_feat_x = self.visit_enc(info_feat[:, 0:1])
+        pos_feat_x = self.pos_enc(info_feat[:, 1:4])
+
+        if self.args.use_cm_score:
+            cm_feat_x = self.cm_enc(info_feat[:, 4:])
+            info_feat = torch.cat([goal_feat_x, visit_feat_x, pos_feat_x, cm_feat_x], dim=-1)
+
+        else:
+            info_feat = torch.cat([goal_feat_x, visit_feat_x, pos_feat_x], dim=-1)
+
+        feat_list = []
+        feat_list.append(self.feat_enc0(torch.cat([feat_x, info_feat], dim=-1)))
+        for i in range(self.gcn_layer_num):
+            feat_x = self.batchnorm(self.relu(self.graph_convs[i](feat_x, adj))) + feat_x
+            feat_list.append(self.node_feat_enc[i](torch.cat([feat_x, info_feat], dim=-1)))
+
+        feat_list.append(info_feat)
+
+        feat_x = torch.cat(feat_list, dim=-1)
+        pred_dist = self.sigmoid(self.value_layer(feat_x))
+
+        return pred_dist

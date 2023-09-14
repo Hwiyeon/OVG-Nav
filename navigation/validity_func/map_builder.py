@@ -170,7 +170,7 @@ class MapBuilder(object):
             point_cloud, self.agent_height, self.agent_view_angle
         )
 
-        geocentric_pc = du.transform_pose(agent_view, self.prev_pose)
+        geocentric_pc = du.transform_pose(agent_view, (self.map_size_cm/2, self.map_size_cm/2, 0))
 
         geocentric_flat, is_valids = du.bin_points(
             geocentric_pc, curr_map.shape[0], self.z_bins, self.resolution

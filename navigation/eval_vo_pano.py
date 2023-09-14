@@ -17,15 +17,16 @@ parser.add_argument("--model_gpu", type=str, default="0")
 parser.add_argument("--sim_gpu", type=str, default="0")
 # parser.add_argument("--data", type=str, default="gibosn")
 parser.add_argument("--n_for_env", type=int, default=2000)
+parser.add_argument("--debug_frame", type=bool, default=False)
 parser.add_argument("--max_step", type=int, default=500)
 parser.add_argument("--dataset", type=str, default='mp3d')
 parser.add_argument("--run_type", type=str, default="val")
-parser.add_argument("--data_split", type=int, default=0)
+parser.add_argument("--data_split", type=int, default=10)
 parser.add_argument("--data_split_max", type=int, default=11)
 parser.add_argument("--in_data_split", type=int, default=0)
 parser.add_argument("--in_data_split_max", type=int, default=1)
-# parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/test/test4")
-parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/vomatch1_30_cpu_invalid_node_v2_16-56_mp3d21_edge1v1.12_panov8_layer10_hidden512_epoch_6_goalscore_w_adjmtx_valueloss1.0_adjloss100.0_adjsimlos0.0_signloss0.0_use_cm_maxdist30.0_lr0.001")
+parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/test/test8")
+# parser.add_argument("--save_dir", type=str, default="/disk1/hwing/Dataset/cm_graph/{}/{}/0910_vomatch_voiter8_30_cpu_invalid_node_v2_16-56_mp3d21_edge1v1.12_panov8_layer10_hidden512_epoch_6_goalscore_w_adjmtx_valueloss1.0_adjloss100.0_adjsimlos0.0_signloss0.0_use_cm_maxdist30.0_lr0.001")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--scene", type=str, default="/home/hwing/Dataset/habitat/data/scene_datasets/{}")
 parser.add_argument("--dataset_dir", type=str, default="/home/hwing/Dataset/habitat/data/datasets/objectnav/{}/{}/{}/content")
@@ -119,7 +120,7 @@ import gzip
 import _pickle as cPickle
 
 from navigation.configs.settings_pano_navi import make_settings
-import eval_runner_vo_pano as runner
+import eval_runner_vo_pano_test as runner
 from utils.obj_category_info import gibson_goal_obj_names, mp3d_goal_obj_names, rednet_obj_names
 
 
