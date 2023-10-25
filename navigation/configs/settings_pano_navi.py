@@ -420,7 +420,7 @@ def make_cfg(settings):
                     settings['act_rot'],
                     settings['noisy_action_multiplier'],
                     pyrobot_noise_models["LoCoBot"]['ILQR'].rotational_motion,
-                    "linear",
+                    "rotational",
                 )
         @habitat_sim.registry.register_move_fn(body_action=True)
         class NoisyRight(habitat_sim.SceneNodeControl):
@@ -432,7 +432,7 @@ def make_cfg(settings):
                     -settings['act_rot'],
                     settings['noisy_action_multiplier'],
                     pyrobot_noise_models["LoCoBot"]['ILQR'].rotational_motion,
-                    "linear",
+                    "rotational",
                 )
 
         habitat_sim.registry.register_move_fn(NoisyForward, name="move_forward", body_action=True)

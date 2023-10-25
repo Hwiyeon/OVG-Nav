@@ -865,7 +865,7 @@ class Runner:
         return np.sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[2] - pos2[2]) ** 2)
 
 
-    def get_vo_relative_camera_pose0(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, initial_guess=None):
+    def get_vo_relative_camera_pose(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, initial_guess=None):
         action_guess = self.vo_model.get_extrinsic_guess_from_action(action)
         # if initial_guess is None:
         for i in range(5):
@@ -888,9 +888,9 @@ class Runner:
 
         return est_pos_diff, est_rot_diff, keypoint_est_success
 
-    def get_vo_relative_camera_pose(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, prev_local_map, curr_local_map, use_matching=False, oracle=None):
+    def get_vo_relative_camera_pose0(self, prev_rgb, prev_depth, curr_rgb, action, cur_rotation, prev_local_map, curr_local_map, use_matching=False, oracle=None):
         action_guess = self.vo_model.get_extrinsic_guess_from_action(action)
-        for i in range(8):
+        for i in range(5):
         # use_matching = True
         # if not use_matching:
             if i < 5:
@@ -984,7 +984,10 @@ class Runner:
         #     print('Step: ', self.action_step, '  use matching : ', cand_map_idx, '  rot : ', rot_guess, '  pos : ', pos_guess)
         #     print('       est_pos_diff : ', est_pos_diff, '  est_rot_diff : ', est_rot_diff)
         # else:
-        #     print('Step: ', self.action_step, '  est_pos_diff : ', est_pos_diff, '  est_rot_diff : ', est_rot_diff)
+        #     print('Step: ', self.action_step, 'Action: ', action, '  est_pos_diff : ', est_pos_diff, '  est_rot_diff : ', np.rad2deg(est_rot_diff))
+
+        # if not oracle == None:
+        #     oracle[0] = np.linalg.norm(oracle[0])
         return est_pos_diff, est_rot_diff, keypoint_est_success
 
 
@@ -1737,7 +1740,7 @@ class Runner:
         prev_rgb = prev_obs['color_sensor'][:,:,:3]
         prev_depth = prev_obs['depth_sensor']
         # prev_local_map = self.local_agent.get_observed_colored_map(gt=True)
-        prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
+        # prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
         prev_position = self._sim.agents[0].get_state().position
         prev_rotation = quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation)
         # prev_local_map = self.local_agent.gt_local_map
@@ -1746,7 +1749,7 @@ class Runner:
 
         curr_rgb = obs['color_sensor'][:,:,:3]
         curr_agent_view = None
-        curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
+        # curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
 
         self.abs_position = self._sim.agents[0].get_state().position
         self.path_length += self.dist_euclidean_floor(abs_prev_position, self.abs_position)
@@ -1754,11 +1757,11 @@ class Runner:
 
         # use_matching = False
         # for _ in range(5):
-        # est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose0(prev_rgb, prev_depth, curr_rgb,
-        #                                                                           action, self.cur_rotation)
-
         est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb,
-                                                                                  action, self.cur_rotation, prev_local_map, curr_local_map)
+                                                                                  action, self.cur_rotation)
+
+        # est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb,
+        #                                                                           action, self.cur_rotation, prev_local_map, curr_local_map)
         # if vo_success:
         #     break
         # else:
@@ -2028,7 +2031,7 @@ class Runner:
                 prev_obs = obs
                 prev_rgb = prev_obs['color_sensor'][:, :, :3]
                 prev_depth = prev_obs['depth_sensor']
-                prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
+                # prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
 
                 torch.set_num_threads(1)
                 obs = self._sim.step(action)
@@ -2040,7 +2043,7 @@ class Runner:
                     arrive_node = False
 
                 curr_agent_view = None
-                curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor']*100.)
+                # curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor']*100.)
 
                 # prev_map = torch.Tensor(prev_local_map).unsqueeze(0).unsqueeze(0)
                 # curr_map = torch.Tensor(curr_local_map).unsqueeze(0).unsqueeze(0)
@@ -2070,18 +2073,15 @@ class Runner:
 
                 curr_rgb = obs['color_sensor'][:, :, :3]
                 # use_matching = False
-                # for _ in range(5):
-                # est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose0(prev_rgb, prev_depth,
-                #                                                                           curr_rgb, action,
-                #                                                                           self.cur_rotation)
 
-                est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb, action, self.cur_rotation, prev_local_map, curr_local_map,
-                                                                                          oracle=[self._sim.agents[0].get_state().position - prev_position, np.rad2deg(quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation) - prev_rotation)])
+                est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth,
+                                                                                          curr_rgb, action,
+                                                                                          self.cur_rotation)
 
-                # if vo_success:
-                #     break
-                # else:
-                #     use_matching = True
+                # est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth, curr_rgb, action, self.cur_rotation, prev_local_map, curr_local_map,
+                #                                                                           oracle=[self._sim.agents[0].get_state().position - prev_position, np.rad2deg(quaternion.as_rotation_vector(self._sim.agents[0].get_state().rotation) - prev_rotation)])
+
+
                 curr_position = self.cur_position + est_pos_diff
                 curr_rotation = self.cur_rotation + est_rot_diff
                 self.cur_position = curr_position
@@ -2372,7 +2372,7 @@ class Runner:
             prev_rgb = obs['color_sensor'][:, :, :3]
             prev_depth = obs['depth_sensor']
             # prev_local_map = self.local_agent.gt_local_map
-            prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
+            # prev_agent_view, prev_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(prev_obs['depth_sensor'] * 100.)
 
             action, terminate_local = self.local_agent.navigate_local(gt=True)
             action = self.local_agent.action_idx_map[action]
@@ -2380,19 +2380,19 @@ class Runner:
             obs = self._sim.step(action)
             self.path_length += self.dist_euclidean_floor(prev_position, self._sim.agents[0].get_state().position)
             curr_agent_view = None
-            curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
+            # curr_agent_view, curr_local_map, _, _ = self.local_agent.mapper.get_curr_obsmap(obs['depth_sensor'] * 100.)
 
             curr_rgb = obs['color_sensor'][:, :, :3]
             # use_matching=False
             # for _ in range(5):
-            # est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose0(prev_rgb, prev_depth,
-            #                                                                           curr_rgb, action,
-            #                                                                           self.cur_rotation)
-
             est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth,
                                                                                       curr_rgb, action,
-                                                                                      self.cur_rotation,
-                                                                                      prev_local_map, curr_local_map)
+                                                                                      self.cur_rotation)
+
+            # est_pos_diff, est_rot_diff, vo_success = self.get_vo_relative_camera_pose(prev_rgb, prev_depth,
+            #                                                                           curr_rgb, action,
+            #                                                                           self.cur_rotation,
+            #                                                                           prev_local_map, curr_local_map)
 
             # if vo_success: break
             # else: use_matching = True
@@ -2702,8 +2702,7 @@ class Runner:
         end_in_data_idx = int((self.args.in_data_split + 1) / self.args.in_data_split_max * len(valid_traj_list)) + 1
         data_idx = start_in_data_idx
 
-        # for traj in valid_traj_list[0:len(valid_traj_list):interval][start_in_data_idx:end_in_data_idx]:
-        for traj in valid_traj_list[0:len(valid_traj_list):interval][17:18]:
+        for traj in valid_traj_list[0:len(valid_traj_list):interval][start_in_data_idx:end_in_data_idx]:
             data_idx += 1
             if data_idx > max_data_num:
                 break

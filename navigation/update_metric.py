@@ -84,6 +84,6 @@ def collect_eval_results(eval_name, obj_type='mp3d'):
 
 
 if __name__ == '__main__':
-    success_results = collect_eval_results('/disk1/hwing/Dataset/cm_graph/mp3d/val/vo3_30_cpu_invalid_node_v2_16-56_mp3d21_edge1v1.12_panov8_layer10_hidden512_epoch_6_goalscore_w_adjmtx_valueloss1.0_adjloss100.0_adjsimlos0.0_signloss0.0_use_cm_maxdist30.0_lr0.001',
+    success_results = collect_eval_results('/disk1/hwing/Dataset/cm_graph/mp3d/val/0918_vonomatch_voiter5_noiseupdate_30_cpu_invalid_node_v2_16-56_mp3d21_edge1v1.12_panov8_layer10_hidden512_epoch_6_goalscore_w_adjmtx_valueloss1.0_adjloss100.0_adjsimlos0.0_signloss0.0_use_cm_maxdist30.0_lr0.001',
                                            obj_type='mp3d_21')
     print(success_results)
