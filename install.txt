@@ -1,5 +1,5 @@
-conda create -n csnav_v630 python=3.7
-conda activate csnav_v630
+conda create -n OVG-NAV python=3.7
+conda activate OVG-NAV
 pip install transformers
 conda install pytorch==1.9.1 torchvision==0.10.1 torchaudio==0.9.1 cudatoolkit=10.2 -c pytorch -y
 pip install ftfy regex tqdm
