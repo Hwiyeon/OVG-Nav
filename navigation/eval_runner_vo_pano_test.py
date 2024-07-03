@@ -30,7 +30,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import shortest_path
 import skimage
 # from habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
-# from habitat.utils.visualizations import maps
+from utils.visualizations import maps
 
 import habitat_sim
 import habitat_sim.agent
