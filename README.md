@@ -10,7 +10,7 @@ Seoul National University
 Object goal navigation (ObjectNav) is the task of finding a target object in an unseen environment. It is one of the fundamental challenges in visual navigation as it requires both structural and semantic understanding. In this paper, we present OVG-Nav, a novel ObjectNav framework that leverages a topological graph structure called object value graph (OVG), which contains visual observations and commonsense prior knowledge. The high-level planning of OVG-Nav prioritizes subgoal nodes for exploration based on a metric called object value, which reflects the closeness to the target object. Here, we propose OVGNet, a model designed to predict the object values of each node of an OVG using observed features along with commonsense knowledge. The structure of highlevel planning using OVG and low-level action decisions reduces sensitivity to accumulating sensor noises, leading to robust navigation performance. Experimental results show that OVGNav outperforms the baseline in success rate (SR) and success rate weighted by path length (SPL) in the MP3D dataset both in accurate sensing and noisy sensing. In addition, we show that the OVG-Nav can be transferred to the real-world robot successfully.
 ## Example
 
-<video src="demo/OVG-Nav_imgae.mp4" controls width="600"></video>
+![ExampleVideo](demo/OVG-Nav_image.gif)
 
 Note that the top-down map and pose information are only used for visualization, not for the graph generation. 
 
